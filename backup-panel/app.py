@@ -14,10 +14,7 @@ STALE_HOURS = int(os.environ.get("BACKUP_PANEL_STALE_HOURS", "30"))
 
 app = Flask(__name__)
 
-OK = {
-    "OK",
-    "CACHED_OK",
-}
+OK = {"OK", "CACHED_OK"}
 
 INFO = {
     "SKIPPED_LINUX_DB2",
@@ -27,6 +24,8 @@ INFO = {
     "SKIPPED_NOT_DB2",
     "CACHED_SKIPPED_NOT_DB2",
     "SKIPPED_SYSTEM_DIR",
+    "NOT_APPLICABLE",
+    "CACHED_NOT_APPLICABLE",
 }
 
 WARN = {
@@ -41,6 +40,15 @@ WARN = {
 
 SYSTEM_CLIENTS = {"db2inst1", "__system__"}
 SYSTEM_STATUSES = {"SKIPPED_SYSTEM_DIR"}
+
+WINDOWS_DB2_STATUSES = {
+    "OK",
+    "CACHED_OK",
+    "SKIPPED_WINDOWS_DB2",
+    "CACHED_SKIPPED_WINDOWS_DB2",
+}
+LINUX_DB2_STATUSES = {"OK", "CACHED_OK"}
+NOT_DB2_STATUSES = {"SKIPPED_NOT_DB2", "CACHED_SKIPPED_NOT_DB2", "NOT_APPLICABLE", "CACHED_NOT_APPLICABLE"}
 
 
 def now() -> str:
@@ -244,16 +252,36 @@ def display_message(row) -> str:
         if rank(db2_windows_status) == 2 and db2_windows_message:
             return clean_message(db2_windows_message)
 
-    if db2_windows_status and db2_windows_message and rank(db2_windows_status) in (2, 3):
-        return clean_message(db2_windows_message)
-
-    if db2_linux_status and db2_linux_message and rank(db2_linux_status) in (2, 3):
-        return clean_message(db2_linux_message)
-
-    if freshness_status and freshness_message and rank(freshness_status) in (2, 3):
-        return clean_message(freshness_message)
-
     return ""
+
+
+def backup_system(row: dict) -> tuple[str, str]:
+    linux_status = str(row.get("db2_linux_status") or "").upper()
+    windows_status = str(row.get("db2_windows_status") or "").upper()
+
+    if linux_status in {"OK", "CACHED_OK"}:
+        return "🐧", "Linux DB2"
+
+    if windows_status in {"OK", "CACHED_OK"} or linux_status in {
+        "SKIPPED_WINDOWS_DB2",
+        "CACHED_SKIPPED_WINDOWS_DB2",
+    }:
+        return "🪟", "Windows DB2"
+
+    if linux_status in NOT_DB2_STATUSES and windows_status in NOT_DB2_STATUSES:
+        return "📦", "Inny system / nie DB2"
+
+    if linux_status in NOT_DB2_STATUSES:
+        return "📦", "Inny system / nie DB2"
+
+    return "–", "Nieustalony"
+
+
+def decorate_client(row: dict) -> dict:
+    icons, label = backup_system(row)
+    row["backup_system_icon"] = icons
+    row["backup_system_label"] = label
+    return row
 
 
 def save_item(item: dict):
@@ -293,9 +321,7 @@ INSERT INTO check_results (
                 (item["client"], now()),
             )
 
-        fields = {
-            "updated_at": now(),
-        }
+        fields = {"updated_at": now()}
 
         if item["file_path"]:
             fields["last_file_path"] = item["file_path"]
@@ -374,20 +400,23 @@ def refresh_display_messages():
             )
 
 
-def summarize(clients):
-    summary = {
-        "total": len(clients),
-        "OK": 0,
-        "WARNING": 0,
-        "ERROR": 0,
-        "STALE": 0,
-        "UNKNOWN": 0,
-    }
+def fetch_clients():
+    refresh_display_messages()
+    with db() as conn:
+        rows = [
+            decorate_client(dict(row))
+            for row in conn.execute(
+                "SELECT * FROM client_status WHERE client NOT IN ('db2inst1', '__system__') ORDER BY client COLLATE NOCASE"
+            )
+        ]
+    return rows
 
+
+def summarize(clients):
+    summary = {"total": len(clients), "OK": 0, "WARNING": 0, "ERROR": 0, "STALE": 0, "UNKNOWN": 0}
     for client in clients:
         status = client.get("overall_status") or "UNKNOWN"
         summary[status] = summary.get(status, 0) + 1
-
     return summary
 
 
@@ -403,35 +432,15 @@ def check_result():
         item = norm(payload)
         result = save_item(item)
         target = ignored if result == "ignored" else accepted
-        target.append(
-            {
-                "client": item["client"],
-                "source": item["source"],
-                "status": item["status"],
-            }
-        )
+        target.append({"client": item["client"], "source": item["source"], "status": item["status"]})
 
     return jsonify({"ok": True, "accepted": accepted, "ignored": ignored})
 
 
 @app.route("/api/status")
 def api_status():
-    refresh_display_messages()
-    with db() as conn:
-        clients = [
-            dict(row)
-            for row in conn.execute(
-                "SELECT * FROM client_status ORDER BY client COLLATE NOCASE"
-            )
-        ]
-
-    return jsonify(
-        {
-            "generatedAt": now(),
-            "summary": summarize(clients),
-            "clients": clients,
-        }
-    )
+    clients = fetch_clients()
+    return jsonify({"generatedAt": now(), "summary": summarize(clients), "clients": clients})
 
 
 @app.route("/api/history/<client>")
@@ -445,27 +454,13 @@ def api_history(client):
                 (client, limit),
             )
         ]
-
     return jsonify({"client": client, "results": rows})
 
 
 @app.route("/")
 def index():
-    refresh_display_messages()
-    with db() as conn:
-        clients = [
-            dict(row)
-            for row in conn.execute(
-                "SELECT * FROM client_status ORDER BY client COLLATE NOCASE"
-            )
-        ]
-
-    return render_template(
-        "index.html",
-        clients=clients,
-        summary=summarize(clients),
-        generated_at=now(),
-    )
+    clients = fetch_clients()
+    return render_template("index.html", clients=clients, summary=summarize(clients), generated_at=now())
 
 
 if __name__ == "__main__":
