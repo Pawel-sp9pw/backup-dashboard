@@ -53,7 +53,7 @@
     </thead>
     <tbody>
       {% for c in clients %}
-      <tr data-status="{{ c.overall_status }}" data-text="{{ (c.client ~ ' ' ~ c.backup_system_label ~ ' ' ~ (c.last_message or '') ~ ' ' ~ (c.last_error or ''))|lower }}">
+      <tr data-status="{{ c.overall_status }}" data-text="{{ (c.client ~ ' ' ~ c.backup_system_label ~ ' ' ~ (c.display_message or ''))|lower }}">
         <td class="client">{{ c.client }}</td>
         <td><span class="badge {{ c.overall_status|lower }}">{{ c.overall_status }}</span></td>
         <td>
@@ -68,7 +68,7 @@
         <td><span class="pill">{{ c.freshness_status or '-' }}</span></td>
         <td><span class="pill os linux">🐧 {{ c.db2_linux_status or '-' }}</span></td>
         <td><span class="pill os windows">🪟 {{ c.db2_windows_status or '-' }}</span></td>
-        <td class="message" title="{{ c.last_message or c.last_error or '' }}">{{ c.last_message or c.last_error or '' }}</td>
+        <td class="message" title="{{ c.display_message or '' }}">{{ c.display_message or '' }}</td>
         <td class="mono small">{{ c.updated_at or '-' }}</td>
       </tr>
       {% endfor %}
