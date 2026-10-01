@@ -1,0 +1,84 @@
+{
+  "name": "Backup Panel - agregator wyników RESULT",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "backup-panel-ingest",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "9713d6d3-edf0-49f1-9768-ec3e0507a3ec",
+      "name": "Webhook - wynik checkera",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-680, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: $json.body || $json }];"
+      },
+      "id": "274ab4f7-cd2c-449a-99c3-353a5949f193",
+      "name": "Weź body",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-460, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const token = $json.panelToken || 'zmien_na_losowy_dlugi_token';\nconst panelUrl = $json.panelUrl || 'http://172.20.0.2:8080/api/check-result';\nconst source = $json.source || 'db2_windows';\nconst stdout = $json.stdout || $json.rawStdout || '';\nconst checkedAt = $json.checkedAt || new Date().toISOString();\nreturn stdout.split(/\\r?\\n/).filter(line => line.startsWith('RESULT|')).map(line => { const p=line.split('|'); return { json: { panelUrl, token, source, client:p[2]||'__system__', status:p[1]||'UNKNOWN', file_path:p[3]||'', checked_at:checkedAt, message:p.slice(4).join('|')||'' } }; });"
+      },
+      "id": "f6a3c10d-6b39-4c17-845e-0389b0d26f68",
+      "name": "Parsuj RESULT na rekordy",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-220, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.panelUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "X-Backup-Panel-Token", "value": "={{ $json.token }}"},
+            {"name": "Content-Type", "value": "application/json"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { source: $json.source, client: $json.client, status: $json.status, file_path: $json.file_path, checked_at: $json.checked_at, message: $json.message } }}",
+        "options": {}
+      },
+      "id": "26204073-7e68-4e57-9cf7-366376e24bd5",
+      "name": "Wyślij do dashboardu",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [40, 0],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, sent: $items().length } }}",
+        "options": {}
+      },
+      "id": "7f0b2a49-e475-47c9-a17a-2130ad0707e6",
+      "name": "Odpowiedź",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [300, 0]
+    }
+  ],
+  "connections": {
+    "Webhook - wynik checkera": {"main": [[{"node": "Weź body", "type": "main", "index": 0}]]},
+    "Weź body": {"main": [[{"node": "Parsuj RESULT na rekordy", "type": "main", "index": 0}]]},
+    "Parsuj RESULT na rekordy": {"main": [[{"node": "Wyślij do dashboardu", "type": "main", "index": 0}]]},
+    "Wyślij do dashboardu": {"main": [[{"node": "Odpowiedź", "type": "main", "index": 0}]]}
+  },
+  "settings": {"executionOrder": "v1", "timezone": "Europe/Warsaw"},
+  "active": false,
+  "versionId": "2a9091e2-08a0-491c-baa1-37fa8debfa47",
+  "id": "2d282d58-f688-439b-be2e-f1d6729b0cd3",
+  "tags": []
+}
