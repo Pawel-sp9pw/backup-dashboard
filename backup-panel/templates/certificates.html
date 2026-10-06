@@ -16,138 +16,71 @@
   <nav class="topnav">
     <a href="/">Kopie</a>
     <a class="active" href="/certificates">Certyfikaty P1</a>
+    <a href="/clients">Klienci</a>
   </nav>
 </header>
-
-{% set grouped = certificates|sort(attribute='client')|groupby('client') %}
-{% set sum = namespace(total=0, ok=0, warning=0, error=0, unknown=0, certs=certificates|length) %}
-{% for client, certs in grouped %}
-  {% set row = namespace(status='OK') %}
-  {% for c in certs %}
-    {% if c.cert_status == 'ERROR' %}
-      {% set row.status = 'ERROR' %}
-    {% elif c.cert_status == 'WARNING' and row.status != 'ERROR' %}
-      {% set row.status = 'WARNING' %}
-    {% elif c.cert_status == 'UNKNOWN' and row.status not in ['ERROR', 'WARNING'] %}
-      {% set row.status = 'UNKNOWN' %}
-    {% endif %}
-  {% endfor %}
-  {% set sum.total = sum.total + 1 %}
-  {% if row.status == 'ERROR' %}
-    {% set sum.error = sum.error + 1 %}
-  {% elif row.status == 'WARNING' %}
-    {% set sum.warning = sum.warning + 1 %}
-  {% elif row.status == 'UNKNOWN' %}
-    {% set sum.unknown = sum.unknown + 1 %}
-  {% else %}
-    {% set sum.ok = sum.ok + 1 %}
-  {% endif %}
-{% endfor %}
-
 <section class="cards">
-  <div class="card neutral"><span class="label">Klienci</span><strong>{{ sum.total }}</strong></div>
-  <div class="card ok"><span class="label">OK</span><strong>{{ sum.ok }}</strong></div>
-  <div class="card warning"><span class="label">Ostrzeżenia</span><strong>{{ sum.warning + sum.unknown }}</strong></div>
-  <div class="card error"><span class="label">Błędy / wygasłe</span><strong>{{ sum.error }}</strong></div>
+  <div class="card neutral"><span class="label">Klienci z P1</span><strong>{{ summary.total }}</strong></div>
+  <div class="card ok"><span class="label">OK</span><strong>{{ summary.OK }}</strong></div>
+  <div class="card warning"><span class="label">Ostrzeżenia</span><strong>{{ summary.WARNING + summary.UNKNOWN }}</strong></div>
+  <div class="card error"><span class="label">Błędy / wygasłe</span><strong>{{ summary.ERROR }}</strong></div>
 </section>
-
 <section class="toolbar">
   <input id="search" type="search" placeholder="Szukaj klienta, certyfikatu, subject…" oninput="filterTable()">
   <select id="statusFilter" onchange="filterTable()">
-    <option value="">Wszystkie statusy</option>
-    <option value="OK">OK</option>
-    <option value="WARNING">Ostrzeżenia</option>
-    <option value="ERROR">Błędy</option>
-    <option value="UNKNOWN">Brak danych</option>
+    <option value="">Wszystkie statusy</option><option value="OK">OK</option><option value="WARNING">Ostrzeżenia</option><option value="ERROR">Błędy</option><option value="UNKNOWN">Brak danych</option>
   </select>
 </section>
-
 <main class="table-wrap">
   <table id="certTable">
-    <thead>
-      <tr>
-        <th>Klient</th>
-        <th>Status</th>
-        <th>Liczba cert.</th>
-        <th>Najbliższe wygaśnięcie</th>
-        <th>Dni</th>
-        <th>Certyfikaty</th>
-        <th>Komunikat</th>
-        <th>Aktualizacja</th>
-      </tr>
-    </thead>
+    <thead><tr><th>Klient</th><th>Status</th><th>Certyfikaty</th><th>Najbliższe wygaśnięcie</th><th>Komunikat</th><th>Szczegóły</th></tr></thead>
     <tbody>
-    {% for client, certs in grouped %}
-      {% set ns = namespace(status='OK', min_days=none, nearest='-', message='', updated='-', text=client) %}
+    {% set grouped = {} %}
+    {% for c in certificates %}
+      {% if grouped.update({c.client: (grouped.get(c.client, []) + [c])}) %}{% endif %}
+    {% endfor %}
+    {% for client, certs in grouped.items() %}
+      {% set ns = namespace(status='OK', days=None, valid_to='', msg='', text=client) %}
       {% for c in certs %}
-        {% set ns.text = ns.text ~ ' ' ~ c.cert_file ~ ' ' ~ c.cert_path ~ ' ' ~ (c.subject or '') ~ ' ' ~ (c.message or '') %}
-
-        {% if c.cert_status == 'ERROR' %}
-          {% set ns.status = 'ERROR' %}
-          {% if not ns.message and c.message %}{% set ns.message = c.message %}{% endif %}
-        {% elif c.cert_status == 'WARNING' and ns.status != 'ERROR' %}
-          {% set ns.status = 'WARNING' %}
-          {% if not ns.message and c.message %}{% set ns.message = c.message %}{% endif %}
-        {% elif c.cert_status == 'UNKNOWN' and ns.status not in ['ERROR', 'WARNING'] %}
-          {% set ns.status = 'UNKNOWN' %}
-          {% if not ns.message and c.message %}{% set ns.message = c.message %}{% endif %}
-        {% endif %}
-
-        {% if c.days_left is not none and (ns.min_days is none or c.days_left < ns.min_days) %}
-          {% set ns.min_days = c.days_left %}
-          {% set ns.nearest = c.valid_to or '-' %}
-        {% endif %}
-
-        {% if c.updated_at and (ns.updated == '-' or c.updated_at > ns.updated) %}
-          {% set ns.updated = c.updated_at %}
-        {% elif c.checked_at and (ns.updated == '-' or c.checked_at > ns.updated) %}
-          {% set ns.updated = c.checked_at %}
-        {% endif %}
+        {% set ns.text = ns.text ~ ' ' ~ c.cert_file ~ ' ' ~ (c.subject or '') ~ ' ' ~ (c.message or '') %}
+        {% if c.cert_status == 'ERROR' %}{% set ns.status = 'ERROR' %}{% elif c.cert_status == 'WARNING' and ns.status != 'ERROR' %}{% set ns.status = 'WARNING' %}{% elif c.cert_status == 'UNKNOWN' and ns.status not in ['ERROR','WARNING'] %}{% set ns.status = 'UNKNOWN' %}{% endif %}
+        {% if c.days_left is not none and (ns.days is none or c.days_left < ns.days) %}{% set ns.days = c.days_left %}{% set ns.valid_to = c.valid_to %}{% endif %}
+        {% if not ns.msg and c.message %}{% set ns.msg = c.message %}{% endif %}
       {% endfor %}
-
       <tr data-status="{{ ns.status }}" data-text="{{ ns.text|lower }}">
         <td class="client"><a href="/client/{{ client }}">{{ client }}</a></td>
         <td><span class="badge {{ ns.status|lower }}">{{ ns.status }}</span></td>
         <td>{{ certs|length }}</td>
-        <td class="mono small">{{ ns.nearest }}</td>
-        <td>{{ ns.min_days if ns.min_days is not none else '-' }}</td>
+        <td class="mono small">{{ ns.valid_to or '-' }}{% if ns.days is not none %}<br>{{ ns.days }} dni{% endif %}</td>
+        <td class="message" title="{{ ns.msg }}">{{ ns.msg }}</td>
         <td>
           <details>
             <summary>Pokaż certyfikaty</summary>
-            <div class="nested-list">
-              {% for c in certs|sort(attribute='days_left') %}
-                <div class="nested-item">
-                  <div><strong>{{ c.cert_file }}</strong> <span class="badge {{ c.cert_status|lower }}">{{ c.cert_status }}</span></div>
-                  <div class="mono small">Ważny do: {{ c.valid_to or '-' }} · dni: {{ c.days_left if c.days_left is not none else '-' }}</div>
-                  <div class="mono small" title="{{ c.cert_path }}">{{ c.cert_path }}</div>
-                  {% if c.subject %}<div class="small" title="{{ c.subject }}">Subject: {{ c.subject }}</div>{% endif %}
-                  {% if c.issuer %}<div class="small" title="{{ c.issuer }}">Issuer: {{ c.issuer }}</div>{% endif %}
-                  {% if c.message %}<div class="small">Komunikat: {{ c.message }}</div>{% endif %}
-                </div>
-              {% endfor %}
-            </div>
+            <table class="nested-table">
+              <thead><tr><th>Status</th><th>Certyfikat</th><th>Ważny do</th><th>Dni</th><th>Subject</th><th>Ścieżka</th><th>Komunikat</th></tr></thead>
+              <tbody>
+                {% for c in certs %}
+                <tr>
+                  <td><span class="badge {{ c.cert_status|lower }}">{{ c.cert_status }}</span></td>
+                  <td>{{ c.cert_file }}</td>
+                  <td class="mono small">{{ c.valid_to or '-' }}</td>
+                  <td>{{ c.days_left if c.days_left is not none else '-' }}</td>
+                  <td class="message" title="{{ c.subject or '' }}">{{ c.subject or '' }}</td>
+                  <td class="mono small message" title="{{ c.cert_path }}">{{ c.cert_path }}</td>
+                  <td class="message" title="{{ c.message or '' }}">{{ c.message or '' }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
           </details>
         </td>
-        <td class="message" title="{{ ns.message }}">{{ ns.message }}</td>
-        <td class="mono small">{{ ns.updated }}</td>
       </tr>
     {% endfor %}
     </tbody>
   </table>
 </main>
-
 <script>
-function filterTable(){
-  const q=document.getElementById('search').value.toLowerCase();
-  const s=document.getElementById('statusFilter').value;
-  document.querySelectorAll('#certTable tbody tr').forEach(row=>{
-    const text=row.dataset.text||'';
-    const status=row.dataset.status||'';
-    const mt=!q||text.includes(q);
-    const ms=!s||status===s||(s==='WARNING'&&status==='UNKNOWN');
-    row.style.display=(mt&&ms)?'':'none';
-  });
-}
+function filterTable(){const q=document.getElementById('search').value.toLowerCase();const s=document.getElementById('statusFilter').value;document.querySelectorAll('#certTable tbody tr').forEach(row=>{const text=row.dataset.text||'';const status=row.dataset.status||'';const mt=!q||text.includes(q);const ms=!s||status===s||(s==='WARNING'&&status==='UNKNOWN');row.style.display=(mt&&ms)?'':'none';});}
 </script>
 </body>
 </html>
