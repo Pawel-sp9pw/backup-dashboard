@@ -16,6 +16,7 @@
   <nav class="topnav">
     <a class="active" href="/">Kopie</a>
     <a href="/certificates">Certyfikaty P1</a>
+    <a href="/clients">Klienci</a>
   </nav>
 </header>
 <section class="cards">
@@ -35,8 +36,8 @@
     <thead><tr><th>Klient</th><th>Status</th><th>Typ</th><th>Ostatnia kopia</th><th>Wiek</th><th>Liczba kopii DB2</th><th>Świeżość</th><th>DB2</th><th>Komunikat</th><th>Aktualizacja</th></tr></thead>
     <tbody>
       {% for c in clients %}
-      <tr data-status="{{ c.overall_status }}" data-text="{{ (c.client ~ ' ' ~ c.backup_system_label ~ ' ' ~ (c.display_message or ''))|lower }}">
-        <td class="client"><a href="/client/{{ c.client }}">{{ c.client }}</a></td>
+      <tr data-status="{{ c.overall_status }}" data-text="{{ (c.client ~ ' ' ~ c.display_name ~ ' ' ~ c.backup_system_label ~ ' ' ~ (c.display_message or ''))|lower }}">
+        <td class="client"><a href="/client/{{ c.client }}">{{ c.display_name or c.client }}</a><div class="small mono">{{ c.client }}</div></td>
         <td><span class="badge {{ c.overall_status|lower }}">{{ c.overall_status }}</span></td>
         <td><span class="platform"><span class="platform-icon">{{ c.backup_system_icon }}</span><span class="platform-label">{{ c.backup_system_label }}</span></span></td>
         <td class="mono small">{{ c.last_backup_time or '-' }}</td>
