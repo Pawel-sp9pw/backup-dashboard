@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Powiadomienia — {{ client }}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div>
+    <h1>Powiadomienia — {{ client }}</h1>
+    <p><a href="/client/{{ client }}">← Raport klienta</a> · <a href="/">Dashboard</a></p>
+  </div>
+</header>
+
+<main class="detail narrow">
+  <section class="panel">
+    <h2>Ustawienia powiadomień</h2>
+    <form method="post" class="form-grid">
+      <label class="check"><input type="checkbox" name="enabled" {% if cfg.enabled %}checked{% endif %}> Włącz powiadomienia dla klienta</label>
+      <label>Email klienta
+        <input type="email" name="email" value="{{ cfg.email or '' }}" placeholder="adres@klient.pl">
+      </label>
+      <label class="check"><input type="checkbox" name="notify_error" {% if cfg.notify_error %}checked{% endif %}> Powiadamiaj przy błędzie</label>
+      <label class="check"><input type="checkbox" name="notify_warning" {% if cfg.notify_warning %}checked{% endif %}> Powiadamiaj przy ostrzeżeniu</label>
+      <label class="check"><input type="checkbox" name="notify_stale" {% if cfg.notify_stale %}checked{% endif %}> Powiadamiaj przy statusie STALE</label>
+      <button type="submit">Zapisz ustawienia</button>
+    </form>
+  </section>
+
+  <section class="panel muted">
+    <h2>Uwaga</h2>
+    <p>Panel nie wyśle ponownie tego samego powiadomienia więcej niż raz dziennie dla identycznego problemu.</p>
+    <p>Do działania wysyłki ustaw zmienne SMTP w <code>/etc/backup-panel.env</code>.</p>
+  </section>
+</main>
+</body>
+</html>
