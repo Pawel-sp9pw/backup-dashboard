@@ -8,80 +8,49 @@
 </head>
 <body>
 <header>
-  <div>
-    <h1>Raport klienta — {{ client }}</h1>
-    <p>Historia z ostatnich {{ history_days }} dni. Ostatnie odświeżenie: {{ generated_at }}</p>
-    <p><a href="/">← Dashboard</a> · <a href="/client/{{ client }}/notifications">Powiadomienia klienta</a></p>
-  </div>
+  <div><h1>Raport klienta — {{ client }}</h1><p>Historia z ostatnich {{ history_days }} dni · {{ generated_at }}</p></div>
+  <nav class="topnav"><a href="/">Kopie</a><a href="/certificates">Certyfikaty P1</a><a href="/client/{{ client }}/notifications">Powiadomienia</a></nav>
 </header>
-
 <section class="cards">
   <div class="card {{ status.overall_status|lower }}"><span class="label">Status</span><strong>{{ status.overall_status }}</strong></div>
-  <div class="card neutral"><span class="label">Typ</span><strong class="smaller">{{ status.backup_system_icon }} {{ status.backup_system_label }}</strong></div>
-  <div class="card neutral"><span class="label">Wiek kopii</span><strong>{{ ('%.1f d'|format(status.backup_age_days)) if status.backup_age_days is not none else '-' }}</strong></div>
+  <div class="card neutral"><span class="label">Typ</span><strong>{{ status.backup_system_icon }} {{ status.backup_system_label }}</strong></div>
+  <div class="card neutral"><span class="label">Wiek kopii</span><strong>{{ ('%.1f dni'|format(status.backup_age_days)) if status.backup_age_days is not none else '-' }}</strong></div>
   <div class="card neutral"><span class="label">Liczba kopii DB2</span><strong>{{ status.backup_count if status.backup_count is not none else '-' }}</strong></div>
 </section>
+<main class="table-wrap">
+  <h2>Aktualny status kopii</h2>
+  <table><tbody>
+    <tr><th>Ostatnia kopia</th><td class="mono">{{ status.last_backup_time or '-' }}</td></tr>
+    <tr><th>Plik</th><td class="mono">{{ status.last_file_path or '-' }}</td></tr>
+    <tr><th>Świeżość</th><td><span class="pill">{{ status.freshness_status or '-' }}</span></td></tr>
+    <tr><th>DB2</th><td><span class="pill">{{ status.db2_status or '-' }}</span></td></tr>
+    <tr><th>Komunikat</th><td>{{ status.display_message or '-' }}</td></tr>
+  </tbody></table>
 
-<main class="detail">
-  <section class="panel">
-    <h2>Aktualny status</h2>
-    <table>
-      <tbody>
-        <tr><th>Ostatnia kopia</th><td class="mono">{{ status.last_backup_time or '-' }}</td></tr>
-        <tr><th>Plik</th><td class="mono small wrap">{{ status.last_file_path or '-' }}</td></tr>
-        <tr><th>Świeżość</th><td><span class="pill">{{ status.freshness_status or '-' }}</span></td></tr>
-        <tr><th>DB2</th><td><span class="pill">{{ status.backup_system_icon }} {{ status.db2_status or '-' }}</span></td></tr>
-        <tr><th>Komunikat</th><td>{{ status.display_message or '-' }}</td></tr>
-      </tbody>
-    </table>
-  </section>
+  <h2>Certyfikaty P1</h2>
+  <table><thead><tr><th>Status</th><th>Certyfikat</th><th>Ważny do</th><th>Dni</th><th>Ścieżka</th><th>Komunikat</th></tr></thead><tbody>
+  {% for c in certs %}
+    <tr><td><span class="badge {{ c.cert_status|lower }}">{{ c.cert_status }}</span></td><td>{{ c.cert_file }}</td><td class="mono small">{{ c.valid_to or '-' }}</td><td>{{ c.days_left if c.days_left is not none else '-' }}</td><td class="mono small message" title="{{ c.cert_path }}">{{ c.cert_path }}</td><td class="message" title="{{ c.message or '' }}">{{ c.message or '' }}</td></tr>
+  {% else %}
+    <tr><td colspan="6">Brak danych P1 dla klienta.</td></tr>
+  {% endfor %}
+  </tbody></table>
 
-  <section class="panel">
-    <h2>Powiadomienia</h2>
-    <p>Status: <strong>{{ 'włączone' if cfg.enabled else 'wyłączone' }}</strong></p>
-    <p>Email: <span class="mono">{{ cfg.email or '-' }}</span></p>
-    <p><a class="button" href="/client/{{ client }}/notifications">Zarządzaj powiadomieniami</a></p>
-  </section>
+  <h2>Historia kontroli kopii</h2>
+  <table><thead><tr><th>Czas</th><th>Źródło</th><th>Status</th><th>Plik</th><th>Komunikat</th></tr></thead><tbody>
+  {% for r in results %}
+    <tr><td class="mono small">{{ r.created_at }}</td><td>{{ r.source }}</td><td><span class="pill">{{ r.status }}</span></td><td class="mono small message" title="{{ r.file_path }}">{{ r.file_path }}</td><td class="message" title="{{ r.message or '' }}">{{ r.message or '' }}</td></tr>
+  {% endfor %}
+  </tbody></table>
 
-  <section class="panel">
-    <h2>Historia kontroli z ostatnich {{ history_days }} dni</h2>
-    <div class="table-wrap inner">
-      <table>
-        <thead><tr><th>Czas</th><th>Źródło</th><th>Status</th><th>Plik</th><th>Komunikat</th></tr></thead>
-        <tbody>
-          {% for r in results %}
-          <tr>
-            <td class="mono small">{{ r.created_at }}</td>
-            <td>{{ r.source }}</td>
-            <td><span class="pill">{{ r.status }}</span></td>
-            <td class="mono small wrap">{{ r.file_path or '-' }}</td>
-            <td class="message wide" title="{{ r.message or '' }}">{{ r.message or '' }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </section>
-
-  <section class="panel">
-    <h2>Historia powiadomień</h2>
-    <div class="table-wrap inner">
-      <table>
-        <thead><tr><th>Czas</th><th>Email</th><th>Status klienta</th><th>Wysyłka</th><th>Błąd</th></tr></thead>
-        <tbody>
-          {% for n in notifications %}
-          <tr>
-            <td class="mono small">{{ n.created_at }}</td>
-            <td>{{ n.email }}</td>
-            <td><span class="pill">{{ n.status }}</span></td>
-            <td><span class="pill">{{ n.send_status }}</span></td>
-            <td>{{ n.error or '-' }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </section>
+  <h2>Historia powiadomień</h2>
+  <table><thead><tr><th>Czas</th><th>Email</th><th>Status</th><th>Wysyłka</th><th>Błąd</th></tr></thead><tbody>
+  {% for n in notifications %}
+    <tr><td class="mono small">{{ n.created_at }}</td><td>{{ n.email }}</td><td>{{ n.status }}</td><td>{{ n.send_status }}</td><td>{{ n.error or '' }}</td></tr>
+  {% else %}
+    <tr><td colspan="5">Brak wysłanych powiadomień.</td></tr>
+  {% endfor %}
+  </tbody></table>
 </main>
 </body>
 </html>
