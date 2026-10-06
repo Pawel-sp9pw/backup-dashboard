@@ -33,6 +33,23 @@ SYSTEM_CLIENTS = {"db2inst1", "__system__"}
 SYSTEM_STATUSES = {"SKIPPED_SYSTEM_DIR"}
 NOT_DB2_STATUSES = {"SKIPPED_NOT_DB2", "CACHED_SKIPPED_NOT_DB2", "NOT_APPLICABLE", "CACHED_NOT_APPLICABLE"}
 
+DEFAULT_CLIENTS = [
+    {"client": "vena", "db2_type": "linux"},
+    {"client": "bes", "db2_type": "windows"},
+    {"client": "etos", "db2_type": "windows"},
+    {"client": "galena", "db2_type": "windows"},
+    {"client": "iwaniuk", "db2_type": "windows"},
+    {"client": "novo-med-klobuck", "db2_type": "windows"},
+    {"client": "novo-med-miedzno", "db2_type": "windows"},
+    {"client": "novo-med-panki", "db2_type": "windows"},
+    {"client": "novo-med-popow", "db2_type": "windows"},
+    {"client": "nowinski", "db2_type": "windows"},
+    {"client": "pulsmed", "db2_type": "windows"},
+    {"client": "salomon", "db2_type": "windows"},
+    {"client": "kulej", "db2_type": "none"},
+    {"client": "jagielska", "db2_type": "none"},
+]
+
 
 def now():
     return datetime.now(timezone.utc).isoformat()
@@ -86,6 +103,17 @@ CREATE TABLE IF NOT EXISTS cert_status (
  client TEXT NOT NULL, cert_file TEXT NOT NULL, cert_path TEXT, status TEXT NOT NULL, cert_status TEXT NOT NULL,
  valid_from TEXT, valid_to TEXT, days_left INTEGER, should_alert INTEGER, serial_number TEXT, issuer TEXT, subject TEXT, message TEXT, checked_at TEXT NOT NULL, updated_at TEXT NOT NULL,
  PRIMARY KEY (client, cert_file));
+CREATE TABLE IF NOT EXISTS clients_config (
+ client TEXT PRIMARY KEY,
+ display_name TEXT,
+ active INTEGER NOT NULL DEFAULT 1,
+ backup_enabled INTEGER NOT NULL DEFAULT 1,
+ db2_type TEXT NOT NULL DEFAULT 'none',
+ cert_p1_enabled INTEGER NOT NULL DEFAULT 0,
+ notification_email TEXT,
+ notes TEXT,
+ updated_at TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_check_results_client_created ON check_results(client, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_check_results_created ON check_results(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notification_events_client_created ON notification_events(client, created_at DESC);
@@ -94,6 +122,12 @@ CREATE INDEX IF NOT EXISTS idx_cert_results_created ON cert_results(created_at D
 ''')
         for col in ("freshness_message", "db2_linux_message", "db2_windows_message", "freshness_file_path", "db2_linux_file_path", "db2_windows_file_path"):
             add_column_if_missing(conn, "client_status", col, "TEXT")
+        for item in DEFAULT_CLIENTS:
+            conn.execute(
+                "INSERT OR IGNORE INTO clients_config (client, display_name, active, backup_enabled, db2_type, cert_p1_enabled, updated_at) VALUES (?,?,?,?,?,?,?)",
+                (item["client"], item["client"], 1, 1, item["db2_type"], 0, now()),
+            )
+        sync_missing_client_configs(conn)
         prune_history(conn)
 
 
@@ -117,6 +151,34 @@ def require_token():
         abort(401)
 
 
+def sync_missing_client_configs(conn):
+    known = {r["client"] for r in conn.execute("SELECT client FROM clients_config")}
+    names = set()
+    names.update(r["client"] for r in conn.execute("SELECT client FROM client_status WHERE client NOT IN ('db2inst1','__system__')"))
+    names.update(r["client"] for r in conn.execute("SELECT DISTINCT client FROM cert_status WHERE client NOT IN ('db2inst1','__system__')"))
+    for client in sorted(names - known):
+        cs = conn.execute("SELECT db2_linux_status, db2_windows_status FROM client_status WHERE client=?", (client,)).fetchone()
+        cert = conn.execute("SELECT 1 FROM cert_status WHERE client=? LIMIT 1", (client,)).fetchone()
+        db2_type = "none"
+        backup_enabled = 1 if cs else 0
+        cert_enabled = 1 if cert else 0
+        if cs:
+            linux = str(cs["db2_linux_status"] or "").upper()
+            windows = str(cs["db2_windows_status"] or "").upper()
+            if linux in {"OK", "CACHED_OK"}:
+                db2_type = "linux"
+            elif windows in {"OK", "CACHED_OK"} or linux in {"SKIPPED_WINDOWS_DB2", "CACHED_SKIPPED_WINDOWS_DB2"}:
+                db2_type = "windows"
+        conn.execute(
+            "INSERT INTO clients_config (client, display_name, active, backup_enabled, db2_type, cert_p1_enabled, updated_at) VALUES (?,?,?,?,?,?,?)",
+            (client, client, 1, backup_enabled, db2_type, cert_enabled, now()),
+        )
+
+
+def active_clients_clause(alias="c"):
+    return f"EXISTS (SELECT 1 FROM clients_config cfg WHERE cfg.client={alias}.client AND cfg.active=1)"
+
+
 def norm(payload):
     source = str(payload.get("source") or "").strip()
     client = str(payload.get("client") or "").strip()
@@ -135,21 +197,7 @@ def norm_cert(payload):
         days_left = int(days_left) if days_left is not None else None
     except Exception:
         days_left = None
-    return {
-        "client": client or "__system__",
-        "cert_file": cert_file or "-",
-        "cert_path": payload.get("cert_path") or payload.get("sciezka") or "",
-        "status": status,
-        "valid_from": payload.get("valid_from") or payload.get("wazny_od") or "",
-        "valid_to": payload.get("valid_to") or payload.get("wazny_do") or "",
-        "days_left": days_left,
-        "should_alert": bool(payload.get("should_alert") if payload.get("should_alert") is not None else payload.get("alert_30_dni")),
-        "serial_number": payload.get("serial_number") or payload.get("numer_seryjny") or "",
-        "issuer": payload.get("issuer") or "",
-        "subject": payload.get("subject") or "",
-        "message": payload.get("error") or payload.get("blad") or payload.get("message") or "",
-        "raw_json": json.dumps(payload, ensure_ascii=False),
-    }
+    return {"client": client or "__system__", "cert_file": cert_file or "-", "cert_path": payload.get("cert_path") or payload.get("sciezka") or "", "status": status, "valid_from": payload.get("valid_from") or payload.get("wazny_od") or "", "valid_to": payload.get("valid_to") or payload.get("wazny_do") or "", "days_left": days_left, "should_alert": bool(payload.get("should_alert") if payload.get("should_alert") is not None else payload.get("alert_30_dni")), "serial_number": payload.get("serial_number") or payload.get("numer_seryjny") or "", "issuer": payload.get("issuer") or "", "subject": payload.get("subject") or "", "message": payload.get("error") or payload.get("blad") or payload.get("message") or "", "raw_json": json.dumps(payload, ensure_ascii=False)}
 
 
 def cert_overall(item):
@@ -194,12 +242,15 @@ def combined_db2_status(row):
 
 
 def backup_system(row):
+    configured = str(row.get("configured_db2_type") or row.get("db2_type") or "").lower()
+    if configured == "linux": return "🐧", "Linux DB2"
+    if configured == "windows": return "🪟", "Windows DB2"
     linux = str(row.get("db2_linux_status") or "").upper()
     windows = str(row.get("db2_windows_status") or "").upper()
     if linux in {"OK", "CACHED_OK"}: return "🐧", "Linux DB2"
     if windows in {"OK", "CACHED_OK"} or linux in {"SKIPPED_WINDOWS_DB2", "CACHED_SKIPPED_WINDOWS_DB2"}: return "🪟", "Windows DB2"
+    if configured == "none": return "📦", "Inny system / bez DB2"
     if linux in NOT_DB2_STATUSES and windows in NOT_DB2_STATUSES: return "📦", "Inny system / nie DB2"
-    if linux in NOT_DB2_STATUSES: return "📦", "Inny system / nie DB2"
     return "–", "Nieustalony"
 
 
@@ -246,6 +297,7 @@ def decorate_client(row):
     row["display_message"] = display_message(row)
     age_h = row.get("backup_age_hours")
     row["backup_age_days"] = round(float(age_h) / 24, 1) if age_h is not None else None
+    row["display_name"] = row.get("display_name") or row.get("client")
     return row
 
 
@@ -262,12 +314,16 @@ def send_mail(to_email, subject, body):
 def notification_config(conn, client):
     cfg = conn.execute("SELECT * FROM client_notifications WHERE client=?", (client,)).fetchone()
     if not cfg:
-        conn.execute("INSERT INTO client_notifications (client, enabled, updated_at) VALUES (?,0,?)", (client, now()))
+        email = conn.execute("SELECT notification_email FROM clients_config WHERE client=?", (client,)).fetchone()
+        conn.execute("INSERT INTO client_notifications (client, enabled, email, updated_at) VALUES (?,?,?,?)", (client, 0, email["notification_email"] if email else "", now()))
         cfg = conn.execute("SELECT * FROM client_notifications WHERE client=?", (client,)).fetchone()
     return cfg
 
 
 def maybe_notify(conn, client):
+    cfg_client = conn.execute("SELECT active FROM clients_config WHERE client=?", (client,)).fetchone()
+    if cfg_client and not cfg_client["active"]:
+        return
     row = conn.execute("SELECT * FROM client_status WHERE client=?", (client,)).fetchone()
     if not row: return
     status = overall(row)
@@ -294,6 +350,8 @@ def save_item(item):
     if should_ignore(item): return "ignored"
     with db() as conn:
         prune_history(conn)
+        if not conn.execute("SELECT client FROM clients_config WHERE client=?", (item["client"],)).fetchone():
+            conn.execute("INSERT INTO clients_config (client, display_name, active, backup_enabled, db2_type, cert_p1_enabled, updated_at) VALUES (?,?,?,?,?,?,?)", (item["client"], item["client"], 1, 1, "none", 0, now()))
         conn.execute("INSERT INTO check_results (created_at,source,client,status,file_path,last_backup_time,backup_age_hours,backup_count,checked_at,message,raw_json) VALUES (?,?,?,?,?,?,?,?,?,?,?)", (now(), item["source"], item["client"], item["status"], item["file_path"], item["last_backup_time"], item["backup_age_hours"], item["backup_count"], item["checked_at"], item["message"], item["raw_json"]))
         if not conn.execute("SELECT client FROM client_status WHERE client=?", (item["client"],)).fetchone(): conn.execute("INSERT INTO client_status (client, overall_status, updated_at) VALUES (?,'UNKNOWN',?)", (item["client"], now()))
         fields = {"updated_at": now()}
@@ -318,6 +376,8 @@ def save_cert_item(item):
     cert_status = cert_overall(item)
     with db() as conn:
         prune_history(conn)
+        if not conn.execute("SELECT client FROM clients_config WHERE client=?", (item["client"],)).fetchone():
+            conn.execute("INSERT INTO clients_config (client, display_name, active, backup_enabled, db2_type, cert_p1_enabled, updated_at) VALUES (?,?,?,?,?,?,?)", (item["client"], item["client"], 1, 0, "none", 1, now()))
         conn.execute("INSERT INTO cert_results (created_at,client,cert_file,cert_path,status,cert_status,valid_from,valid_to,days_left,should_alert,serial_number,issuer,subject,message,raw_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (now(), item["client"], item["cert_file"], item["cert_path"], item["status"], cert_status, item["valid_from"], item["valid_to"], item["days_left"], 1 if item["should_alert"] else 0, item["serial_number"], item["issuer"], item["subject"], item["message"], item["raw_json"]))
         conn.execute("INSERT INTO cert_status (client,cert_file,cert_path,status,cert_status,valid_from,valid_to,days_left,should_alert,serial_number,issuer,subject,message,checked_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(client, cert_file) DO UPDATE SET cert_path=excluded.cert_path,status=excluded.status,cert_status=excluded.cert_status,valid_from=excluded.valid_from,valid_to=excluded.valid_to,days_left=excluded.days_left,should_alert=excluded.should_alert,serial_number=excluded.serial_number,issuer=excluded.issuer,subject=excluded.subject,message=excluded.message,checked_at=excluded.checked_at,updated_at=excluded.updated_at", (item["client"], item["cert_file"], item["cert_path"], item["status"], cert_status, item["valid_from"], item["valid_to"], item["days_left"], 1 if item["should_alert"] else 0, item["serial_number"], item["issuer"], item["subject"], item["message"], now(), now()))
     return {"client": item["client"], "cert_file": item["cert_file"], "cert_status": cert_status}
@@ -333,7 +393,15 @@ def refresh_display_messages():
 def fetch_clients():
     refresh_display_messages()
     with db() as conn:
-        return [decorate_client(dict(r)) for r in conn.execute("SELECT * FROM client_status WHERE client NOT IN ('db2inst1','__system__') ORDER BY client COLLATE NOCASE")]
+        sync_missing_client_configs(conn)
+        rows = [decorate_client(dict(r)) for r in conn.execute("""
+SELECT s.*, cfg.display_name, cfg.active, cfg.backup_enabled, cfg.db2_type AS configured_db2_type, cfg.cert_p1_enabled
+FROM client_status s
+JOIN clients_config cfg ON cfg.client=s.client
+WHERE s.client NOT IN ('db2inst1','__system__') AND cfg.active=1 AND cfg.backup_enabled=1
+ORDER BY COALESCE(cfg.display_name, s.client) COLLATE NOCASE
+""")]
+    return rows
 
 
 def summarize(clients):
@@ -348,6 +416,34 @@ def cert_summary(rows):
     for r in rows:
         s[r.get("cert_status") or "UNKNOWN"] = s.get(r.get("cert_status") or "UNKNOWN", 0) + 1
     return s
+
+
+def service_clients(service):
+    with db() as conn:
+        sync_missing_client_configs(conn)
+        if service == "backup":
+            where = "active=1 AND backup_enabled=1"
+        elif service == "db2-linux":
+            where = "active=1 AND backup_enabled=1 AND db2_type='linux'"
+        elif service == "db2-windows":
+            where = "active=1 AND backup_enabled=1 AND db2_type='windows'"
+        elif service == "cert-p1":
+            where = "active=1 AND cert_p1_enabled=1"
+        else:
+            where = "active=1"
+        rows = [dict(r) for r in conn.execute(f"SELECT * FROM clients_config WHERE {where} ORDER BY COALESCE(display_name, client) COLLATE NOCASE")]
+    return rows
+
+
+def client_list_payload(service="all"):
+    rows = service_clients(service)
+    return {
+        "service": service,
+        "count": len(rows),
+        "clients": [r["client"] for r in rows],
+        "items": rows,
+        "generatedAt": now(),
+    }
 
 
 @app.route("/api/check-result", methods=["POST"])
@@ -369,10 +465,26 @@ def cert_result():
 def api_status():
     clients = fetch_clients(); return jsonify({"generatedAt": now(), "historyDays": HISTORY_DAYS, "summary": summarize(clients), "clients": clients})
 
+@app.route("/api/clients")
+def api_clients():
+    require_token(); return jsonify(client_list_payload("all"))
+
+@app.route("/api/clients/<service>")
+def api_clients_service(service):
+    require_token()
+    if service not in {"backup", "db2-linux", "db2-windows", "cert-p1"}:
+        abort(404)
+    return jsonify(client_list_payload(service))
+
 @app.route("/api/certificates")
 def api_certificates():
     with db() as conn:
-        rows = [dict(r) for r in conn.execute("SELECT * FROM cert_status ORDER BY cert_status DESC, days_left ASC, client COLLATE NOCASE")]
+        rows = [dict(r) for r in conn.execute("""
+SELECT cs.* FROM cert_status cs
+JOIN clients_config cfg ON cfg.client=cs.client
+WHERE cfg.active=1 AND cfg.cert_p1_enabled=1
+ORDER BY CASE cs.cert_status WHEN 'ERROR' THEN 0 WHEN 'WARNING' THEN 1 WHEN 'UNKNOWN' THEN 2 ELSE 3 END, cs.days_left ASC, cs.client COLLATE NOCASE
+""")]
     return jsonify({"generatedAt": now(), "warningDays": CERT_WARN_DAYS, "summary": cert_summary(rows), "certificates": rows})
 
 @app.route("/api/history/<client>")
@@ -389,14 +501,51 @@ def index():
 @app.route("/certificates")
 def certificates():
     with db() as conn:
-        rows = [dict(r) for r in conn.execute("SELECT * FROM cert_status ORDER BY CASE cert_status WHEN 'ERROR' THEN 0 WHEN 'WARNING' THEN 1 WHEN 'UNKNOWN' THEN 2 ELSE 3 END, days_left ASC, client COLLATE NOCASE")]
+        sync_missing_client_configs(conn)
+        rows = [dict(r) for r in conn.execute("""
+SELECT cs.* FROM cert_status cs
+JOIN clients_config cfg ON cfg.client=cs.client
+WHERE cfg.active=1 AND cfg.cert_p1_enabled=1
+ORDER BY CASE cs.cert_status WHEN 'ERROR' THEN 0 WHEN 'WARNING' THEN 1 WHEN 'UNKNOWN' THEN 2 ELSE 3 END, cs.days_left ASC, cs.client COLLATE NOCASE
+""")]
     return render_template("certificates.html", certificates=rows, summary=cert_summary(rows), generated_at=now(), warning_days=CERT_WARN_DAYS)
+
+@app.route("/clients")
+def clients_config_page():
+    with db() as conn:
+        sync_missing_client_configs(conn)
+        rows = [dict(r) for r in conn.execute("SELECT * FROM clients_config ORDER BY active DESC, COALESCE(display_name, client) COLLATE NOCASE")]
+    return render_template("clients.html", clients=rows, generated_at=now())
+
+@app.route("/clients/new", methods=["GET", "POST"])
+def client_config_new():
+    if request.method == "POST":
+        client = request.form.get("client", "").strip()
+        if not client:
+            abort(400)
+        with db() as conn:
+            conn.execute("INSERT OR REPLACE INTO clients_config (client, display_name, active, backup_enabled, db2_type, cert_p1_enabled, notification_email, notes, updated_at) VALUES (?,?,?,?,?,?,?,?,?)", (client, request.form.get("display_name") or client, 1 if request.form.get("active") == "on" else 0, 1 if request.form.get("backup_enabled") == "on" else 0, request.form.get("db2_type") or "none", 1 if request.form.get("cert_p1_enabled") == "on" else 0, request.form.get("notification_email", "").strip(), request.form.get("notes", "").strip(), now()))
+        return redirect(url_for("clients_config_page"))
+    return render_template("client_config_form.html", item=None)
+
+@app.route("/clients/<client>/edit", methods=["GET", "POST"])
+def client_config_edit(client):
+    with db() as conn:
+        if request.method == "POST":
+            conn.execute("UPDATE clients_config SET display_name=?, active=?, backup_enabled=?, db2_type=?, cert_p1_enabled=?, notification_email=?, notes=?, updated_at=? WHERE client=?", (request.form.get("display_name") or client, 1 if request.form.get("active") == "on" else 0, 1 if request.form.get("backup_enabled") == "on" else 0, request.form.get("db2_type") or "none", 1 if request.form.get("cert_p1_enabled") == "on" else 0, request.form.get("notification_email", "").strip(), request.form.get("notes", "").strip(), now(), client))
+            if request.form.get("notification_email"):
+                notification_config(conn, client)
+                conn.execute("UPDATE client_notifications SET email=?, updated_at=? WHERE client=?", (request.form.get("notification_email", "").strip(), now(), client))
+            return redirect(url_for("clients_config_page"))
+        item = conn.execute("SELECT * FROM clients_config WHERE client=?", (client,)).fetchone()
+        if not item: abort(404)
+    return render_template("client_config_form.html", item=dict(item))
 
 @app.route("/client/<client>")
 def client_report(client):
     cutoff = (datetime.now(timezone.utc) - timedelta(days=HISTORY_DAYS)).isoformat()
     with db() as conn:
-        status = conn.execute("SELECT * FROM client_status WHERE client=?", (client,)).fetchone()
+        status = conn.execute("SELECT s.*, cfg.display_name, cfg.active, cfg.backup_enabled, cfg.db2_type AS configured_db2_type, cfg.cert_p1_enabled FROM client_status s LEFT JOIN clients_config cfg ON cfg.client=s.client WHERE s.client=?", (client,)).fetchone()
         if not status: abort(404)
         results = [dict(r) for r in conn.execute("SELECT * FROM check_results WHERE client=? AND created_at>=? ORDER BY created_at DESC", (client, cutoff))]
         certs = [dict(r) for r in conn.execute("SELECT * FROM cert_status WHERE client=? ORDER BY days_left ASC", (client,))]
