@@ -13,43 +13,26 @@
     <h1>PC MED — kopie zapasowe</h1>
     <p>Ostatnie odświeżenie: {{ generated_at }}</p>
   </div>
+  <nav class="topnav">
+    <a class="active" href="/">Kopie</a>
+    <a href="/certificates">Certyfikaty P1</a>
+  </nav>
 </header>
-
 <section class="cards">
   <div class="card neutral"><span class="label">Klienci</span><strong>{{ summary.total }}</strong></div>
   <div class="card ok"><span class="label">OK</span><strong>{{ summary.OK }}</strong></div>
   <div class="card warning"><span class="label">Ostrzeżenia</span><strong>{{ summary.WARNING + summary.STALE + summary.UNKNOWN }}</strong></div>
   <div class="card error"><span class="label">Błędy</span><strong>{{ summary.ERROR }}</strong></div>
 </section>
-
 <section class="toolbar">
   <input id="search" type="search" placeholder="Szukaj klienta lub komunikatu…" oninput="filterTable()">
   <select id="statusFilter" onchange="filterTable()">
-    <option value="">Wszystkie statusy</option>
-    <option value="OK">OK</option>
-    <option value="WARNING">Ostrzeżenia</option>
-    <option value="ERROR">Błędy</option>
-    <option value="STALE">Nieaktualne</option>
-    <option value="UNKNOWN">Brak danych</option>
+    <option value="">Wszystkie statusy</option><option value="OK">OK</option><option value="WARNING">Ostrzeżenia</option><option value="ERROR">Błędy</option><option value="STALE">Nieaktualne</option><option value="UNKNOWN">Brak danych</option>
   </select>
 </section>
-
 <main class="table-wrap">
   <table id="clientsTable">
-    <thead>
-      <tr>
-        <th>Klient</th>
-        <th>Status</th>
-        <th>Typ</th>
-        <th>Ostatnia kopia</th>
-        <th>Wiek</th>
-        <th>Liczba kopii DB2</th>
-        <th>Świeżość</th>
-        <th>DB2</th>
-        <th>Komunikat</th>
-        <th>Aktualizacja</th>
-      </tr>
-    </thead>
+    <thead><tr><th>Klient</th><th>Status</th><th>Typ</th><th>Ostatnia kopia</th><th>Wiek</th><th>Liczba kopii DB2</th><th>Świeżość</th><th>DB2</th><th>Komunikat</th><th>Aktualizacja</th></tr></thead>
     <tbody>
       {% for c in clients %}
       <tr data-status="{{ c.overall_status }}" data-text="{{ (c.client ~ ' ' ~ c.backup_system_label ~ ' ' ~ (c.display_message or ''))|lower }}">
@@ -57,10 +40,10 @@
         <td><span class="badge {{ c.overall_status|lower }}">{{ c.overall_status }}</span></td>
         <td><span class="platform"><span class="platform-icon">{{ c.backup_system_icon }}</span><span class="platform-label">{{ c.backup_system_label }}</span></span></td>
         <td class="mono small">{{ c.last_backup_time or '-' }}</td>
-        <td>{{ ('%.1f d'|format(c.backup_age_days)) if c.backup_age_days is not none else '-' }}</td>
+        <td>{{ ('%.1f dni'|format(c.backup_age_days)) if c.backup_age_days is not none else '-' }}</td>
         <td>{{ c.backup_count if c.backup_count is not none else '-' }}</td>
         <td><span class="pill">{{ c.freshness_status or '-' }}</span></td>
-        <td><span class="pill os">{{ c.backup_system_icon }} {{ c.db2_status or '-' }}</span></td>
+        <td><span class="pill">{{ c.db2_status or '-' }}</span></td>
         <td class="message" title="{{ c.display_message or '' }}">{{ c.display_message or '' }}</td>
         <td class="mono small">{{ c.updated_at or '-' }}</td>
       </tr>
@@ -68,19 +51,8 @@
     </tbody>
   </table>
 </main>
-
 <script>
-function filterTable() {
-  const q = document.getElementById('search').value.toLowerCase();
-  const s = document.getElementById('statusFilter').value;
-  document.querySelectorAll('#clientsTable tbody tr').forEach(row => {
-    const text = row.dataset.text || '';
-    const status = row.dataset.status || '';
-    const mt = !q || text.includes(q);
-    const ms = !s || status === s || (s === 'WARNING' && ['WARNING','STALE','UNKNOWN'].includes(status));
-    row.style.display = (mt && ms) ? '' : 'none';
-  });
-}
+function filterTable(){const q=document.getElementById('search').value.toLowerCase();const s=document.getElementById('statusFilter').value;document.querySelectorAll('#clientsTable tbody tr').forEach(row=>{const text=row.dataset.text||'';const status=row.dataset.status||'';const mt=!q||text.includes(q);const ms=!s||status===s||(s==='WARNING'&&['WARNING','STALE','UNKNOWN'].includes(status));row.style.display=(mt&&ms)?'':'none';});}
 </script>
 </body>
 </html>
