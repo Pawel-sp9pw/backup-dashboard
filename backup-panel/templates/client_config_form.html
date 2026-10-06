@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PC MED — Klient</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div>
+    <h1>{{ 'Edycja klienta' if item else 'Nowy klient' }}</h1>
+    <p>Konfiguracja usług używana przez panel i workflowy n8n.</p>
+  </div>
+  <nav class="topnav">
+    <a href="/">Kopie</a>
+    <a href="/certificates">Certyfikaty P1</a>
+    <a class="active" href="/clients">Klienci</a>
+  </nav>
+</header>
+<main class="table-wrap">
+  <form class="form-card" method="post">
+    <div class="form-row">
+      <label>Id klienta / katalog</label>
+      <input type="text" name="client" value="{{ item.client if item else '' }}" {% if item %}readonly{% endif %} required>
+    </div>
+    <div class="form-row">
+      <label>Nazwa wyświetlana</label>
+      <input type="text" name="display_name" value="{{ item.display_name if item else '' }}">
+    </div>
+    <div class="form-row">
+      <label>Aktywny</label>
+      <input type="checkbox" name="active" {% if not item or item.active %}checked{% endif %}>
+      <span class="muted">Nieaktywny klient nie będzie pokazywany na dashboardach i nie będzie zwracany do n8n.</span>
+    </div>
+    <div class="form-row">
+      <label>Usługa kopii</label>
+      <input type="checkbox" name="backup_enabled" {% if not item or item.backup_enabled %}checked{% endif %}>
+    </div>
+    <div class="form-row">
+      <label>Typ DB2</label>
+      <select name="db2_type">
+        {% set db2 = item.db2_type if item else 'none' %}
+        <option value="none" {% if db2 == 'none' %}selected{% endif %}>none — bez DB2</option>
+        <option value="linux" {% if db2 == 'linux' %}selected{% endif %}>linux</option>
+        <option value="windows" {% if db2 == 'windows' %}selected{% endif %}>windows</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <label>Certyfikaty P1</label>
+      <input type="checkbox" name="cert_p1_enabled" {% if item and item.cert_p1_enabled %}checked{% endif %}>
+    </div>
+    <div class="form-row">
+      <label>Email powiadomień</label>
+      <input type="email" name="notification_email" value="{{ item.notification_email if item else '' }}">
+    </div>
+    <div class="form-row">
+      <label>Notatka</label>
+      <input type="text" name="notes" value="{{ item.notes if item else '' }}">
+    </div>
+    <button class="btn" type="submit">Zapisz</button>
+    <a class="btn" href="/clients">Anuluj</a>
+  </form>
+</main>
+</body>
+</html>
