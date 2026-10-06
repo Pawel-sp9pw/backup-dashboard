@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PC MED — Klienci</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div>
+    <h1>PC MED — klienci i usługi</h1>
+    <p>Centralna lista klientów zasilająca n8n · {{ generated_at }}</p>
+  </div>
+  <nav class="topnav">
+    <a href="/">Kopie</a>
+    <a href="/certificates">Certyfikaty P1</a>
+    <a class="active" href="/clients">Klienci</a>
+  </nav>
+</header>
+<section class="toolbar">
+  <input id="search" type="search" placeholder="Szukaj klienta…" oninput="filterTable()">
+  <a class="btn" href="/clients/new">Dodaj klienta</a>
+</section>
+<main class="table-wrap">
+  <table id="clientsConfigTable">
+    <thead>
+      <tr>
+        <th>Klient</th>
+        <th>Nazwa</th>
+        <th>Aktywny</th>
+        <th>Kopie</th>
+        <th>DB2</th>
+        <th>P1</th>
+        <th>Email</th>
+        <th>Notatka</th>
+        <th>Aktualizacja</th>
+        <th>Akcja</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in clients %}
+      <tr data-text="{{ (c.client ~ ' ' ~ (c.display_name or '') ~ ' ' ~ (c.notification_email or '') ~ ' ' ~ (c.notes or ''))|lower }}">
+        <td class="client"><a href="/client/{{ c.client }}">{{ c.client }}</a></td>
+        <td>{{ c.display_name or c.client }}</td>
+        <td><span class="badge {{ 'ok' if c.active else 'error' }}">{{ 'tak' if c.active else 'nie' }}</span></td>
+        <td><span class="badge {{ 'ok' if c.backup_enabled else 'unknown' }}">{{ 'tak' if c.backup_enabled else 'nie' }}</span></td>
+        <td><span class="pill">{{ c.db2_type }}</span></td>
+        <td><span class="badge {{ 'ok' if c.cert_p1_enabled else 'unknown' }}">{{ 'tak' if c.cert_p1_enabled else 'nie' }}</span></td>
+        <td class="small">{{ c.notification_email or '-' }}</td>
+        <td class="message" title="{{ c.notes or '' }}">{{ c.notes or '' }}</td>
+        <td class="mono small">{{ c.updated_at or '-' }}</td>
+        <td><a class="btn" href="/clients/{{ c.client }}/edit">Edytuj</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</main>
+<script>
+function filterTable(){const q=document.getElementById('search').value.toLowerCase();document.querySelectorAll('#clientsConfigTable tbody tr').forEach(row=>{const text=row.dataset.text||'';row.style.display=(!q||text.includes(q))?'':'none';});}
+</script>
+</body>
+</html>
