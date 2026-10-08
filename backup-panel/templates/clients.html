@@ -30,10 +30,18 @@
 
   {% for c in clients %}
     {% set ns = namespace(parent='') %}
-    {% if '_by_' in c.client %}
+    {% set note = c.notes or '' %}
+
+    {# Ręczna konfiguracja z formularza: parent:galena #}
+    {% if 'parent:' in note %}
+      {% set ns.parent = note.split('parent:', 1)[1].split()[0] %}
+    {% elif '_by_' in c.client %}
       {% set ns.parent = c.client.split('_by_')[-1] %}
     {% elif '_' in c.client %}
-      {% set ns.parent = c.client.split('_')[0] %}
+      {% set maybe_parent = c.client.split('_')[0] %}
+      {% if maybe_parent in all_ids %}
+        {% set ns.parent = maybe_parent %}
+      {% endif %}
     {% endif %}
 
     {% if ns.parent and ns.parent in all_ids and ns.parent != c.client %}
@@ -53,7 +61,7 @@
       <tr data-text="{{ (c.client ~ ' ' ~ (c.display_name or '') ~ ' ' ~ (c.notification_email or '') ~ ' ' ~ (c.notes or '') ~ ' ' ~ sub|map(attribute='client')|join(' '))|lower }}">
         <td class="client">
           <a href="/client/{{ c.client }}">{{ c.client }}</a>
-          {% if sub %}<div class="small muted">+ {{ sub|length }} podmiot techniczny</div>{% endif %}
+          {% if sub %}<div class="small muted">+ {{ sub|length }} podmiot zależny</div>{% endif %}
         </td>
         <td>{{ c.display_name or c.client }}</td>
         <td><span class="badge {{ 'ok' if c.active else 'error' }}">{{ 'tak' if c.active else 'nie' }}</span></td>
@@ -70,7 +78,7 @@
       <tr class="child-row" data-text="{{ (c.client ~ ' ' ~ sub|map(attribute='client')|join(' '))|lower }}">
         <td colspan="10">
           <details>
-            <summary>Podmioty / katalogi techniczne przypisane do {{ c.client }}</summary>
+            <summary>Podmioty zależne / katalogi techniczne przypisane do {{ c.client }}</summary>
             <table class="nested-table">
               <thead>
                 <tr><th>Katalog</th><th>Nazwa</th><th>Aktywny</th><th>Kopie</th><th>DB2</th><th>P1</th><th>Email</th><th>Notatka</th><th>Akcja</th></tr>
