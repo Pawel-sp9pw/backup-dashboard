@@ -8,6 +8,18 @@
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+{% set copy_summary = namespace(total=0, OK=0, WARNING=0, ERROR=0, STALE=0, UNKNOWN=0) %}
+{% for c in clients %}
+  {% if c.backup_enabled %}
+    {% set copy_summary.total = copy_summary.total + 1 %}
+    {% if c.overall_status == 'OK' %}{% set copy_summary.OK = copy_summary.OK + 1 %}
+    {% elif c.overall_status == 'ERROR' %}{% set copy_summary.ERROR = copy_summary.ERROR + 1 %}
+    {% elif c.overall_status == 'STALE' %}{% set copy_summary.STALE = copy_summary.STALE + 1 %}
+    {% elif c.overall_status == 'WARNING' %}{% set copy_summary.WARNING = copy_summary.WARNING + 1 %}
+    {% else %}{% set copy_summary.UNKNOWN = copy_summary.UNKNOWN + 1 %}
+    {% endif %}
+  {% endif %}
+{% endfor %}
 <header>
   <div>
     <h1>PC MED — kopie zapasowe</h1>
@@ -21,10 +33,10 @@
   </nav>
 </header>
 <section class="cards">
-  <div class="card neutral"><span class="label">Klienci</span><strong>{{ summary.total }}</strong></div>
-  <div class="card ok"><span class="label">OK</span><strong>{{ summary.OK }}</strong></div>
-  <div class="card warning"><span class="label">Ostrzeżenia</span><strong>{{ summary.WARNING + summary.STALE + summary.UNKNOWN }}</strong></div>
-  <div class="card error"><span class="label">Błędy</span><strong>{{ summary.ERROR }}</strong></div>
+  <div class="card neutral"><span class="label">Klienci</span><strong>{{ copy_summary.total }}</strong></div>
+  <div class="card ok"><span class="label">OK</span><strong>{{ copy_summary.OK }}</strong></div>
+  <div class="card warning"><span class="label">Ostrzeżenia</span><strong>{{ copy_summary.WARNING + copy_summary.STALE + copy_summary.UNKNOWN }}</strong></div>
+  <div class="card error"><span class="label">Błędy</span><strong>{{ copy_summary.ERROR }}</strong></div>
 </section>
 <section class="toolbar">
   <input id="search" type="search" placeholder="Szukaj klienta lub komunikatu…" oninput="filterTable()">
@@ -37,6 +49,7 @@
     <thead><tr><th>Klient</th><th>Status</th><th>Typ</th><th>Ostatnia kopia</th><th>Wiek</th><th>Liczba kopii DB2</th><th>Świeżość</th><th>DB2</th><th>Komunikat</th><th>Aktualizacja</th></tr></thead>
     <tbody>
       {% for c in clients %}
+      {% if c.backup_enabled %}
       <tr data-status="{{ c.overall_status }}" data-text="{{ (c.client ~ ' ' ~ (c.display_name or '') ~ ' ' ~ c.backup_system_label ~ ' ' ~ (c.display_message or ''))|lower }}">
         <td class="client"><a href="/client/{{ c.client }}">{{ c.display_name or c.client }}</a><div class="small mono">{{ c.client }}</div></td>
         <td><span class="badge {{ c.overall_status|lower }}">{{ c.overall_status }}</span></td>
@@ -49,6 +62,7 @@
         <td class="message" title="{{ c.display_message or '' }}">{{ c.display_message or '' }}</td>
         <td class="mono small">{{ c.updated_at or '-' }}</td>
       </tr>
+      {% endif %}
       {% endfor %}
     </tbody>
   </table>
