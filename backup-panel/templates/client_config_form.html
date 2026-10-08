@@ -7,26 +7,38 @@
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+{% set item = item if item is defined else cfg %}
+{% set current_notes = item.notes if item else '' %}
+{% set parent_from_notes = '' %}
+{% if current_notes and 'parent:' in current_notes %}
+  {% set parent_from_notes = current_notes.split('parent:', 1)[1].split()[0] %}
+{% endif %}
 <header>
   <div>
-    <h1>{{ 'Edycja klienta' if item else 'Nowy klient' }}</h1>
+    <h1>{{ 'Edycja klienta' if item and item.client else 'Nowy klient' }}</h1>
     <p>Konfiguracja usług używana przez panel i workflowy n8n.</p>
   </div>
   <nav class="topnav">
     <a href="/">Kopie</a>
     <a href="/certificates">Certyfikaty P1</a>
+    <a href="/zus-certificates">Certyfikaty ZUS</a>
     <a class="active" href="/clients">Klienci</a>
   </nav>
 </header>
 <main class="table-wrap">
-  <form class="form-card" method="post">
+  <form class="form-card" method="post" onsubmit="syncParentToNotes()">
     <div class="form-row">
       <label>Id klienta / katalog</label>
-      <input type="text" name="client" value="{{ item.client if item else '' }}" {% if item %}readonly{% endif %} required>
+      <input type="text" name="client" value="{{ item.client if item else '' }}" {% if item and item.client %}readonly{% endif %} required>
     </div>
     <div class="form-row">
       <label>Nazwa wyświetlana</label>
       <input type="text" name="display_name" value="{{ item.display_name if item else '' }}">
+    </div>
+    <div class="form-row">
+      <label>Klient nadrzędny</label>
+      <input id="parentClient" type="text" value="{{ parent_from_notes }}" placeholder="np. galena">
+      <span class="muted">Ustaw tylko dla podmiotów zależnych / katalogów technicznych, np. hope_by_galena → galena, medea_szpital → medea. Wartość zostanie zapisana w notatce jako parent:&lt;klient&gt;.</span>
     </div>
     <div class="form-row">
       <label>Aktywny</label>
@@ -36,6 +48,7 @@
     <div class="form-row">
       <label>Usługa kopii</label>
       <input type="checkbox" name="backup_enabled" {% if not item or item.backup_enabled %}checked{% endif %}>
+      <span class="muted">Dla podmiotów zależnych z samymi certyfikatami zwykle zostaw wyłączone.</span>
     </div>
     <div class="form-row">
       <label>Typ DB2</label>
@@ -56,11 +69,21 @@
     </div>
     <div class="form-row">
       <label>Notatka</label>
-      <input type="text" name="notes" value="{{ item.notes if item else '' }}">
+      <input id="notesInput" type="text" name="notes" value="{{ item.notes if item else '' }}">
     </div>
     <button class="btn" type="submit">Zapisz</button>
     <a class="btn" href="/clients">Anuluj</a>
   </form>
 </main>
+<script>
+function syncParentToNotes(){
+  const parent = document.getElementById('parentClient').value.trim();
+  const notesInput = document.getElementById('notesInput');
+  let notes = notesInput.value || '';
+  notes = notes.replace(/\bparent:\S+/g, '').replace(/\s+/g, ' ').trim();
+  if (parent) notes = (`parent:${parent} ` + notes).trim();
+  notesInput.value = notes;
+}
+</script>
 </body>
 </html>
