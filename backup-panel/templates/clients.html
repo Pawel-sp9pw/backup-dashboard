@@ -15,6 +15,7 @@
   <nav class="topnav">
     <a href="/">Kopie</a>
     <a href="/certificates">Certyfikaty P1</a>
+    <a href="/zus-certificates">Certyfikaty ZUS</a>
     <a class="active" href="/clients">Klienci</a>
   </nav>
 </header>
@@ -24,20 +25,7 @@
 </section>
 <main class="table-wrap">
   <table id="clientsConfigTable">
-    <thead>
-      <tr>
-        <th>Klient</th>
-        <th>Nazwa</th>
-        <th>Aktywny</th>
-        <th>Kopie</th>
-        <th>DB2</th>
-        <th>P1</th>
-        <th>Email</th>
-        <th>Notatka</th>
-        <th>Aktualizacja</th>
-        <th>Akcja</th>
-      </tr>
-    </thead>
+    <thead><tr><th>Klient</th><th>Nazwa</th><th>Aktywny</th><th>Kopie</th><th>DB2</th><th>P1</th><th>Email</th><th>Notatka</th><th>Aktualizacja</th><th>Akcja</th></tr></thead>
     <tbody>
       {% for c in clients %}
       <tr data-text="{{ (c.client ~ ' ' ~ (c.display_name or '') ~ ' ' ~ (c.notification_email or '') ~ ' ' ~ (c.notes or ''))|lower }}">
