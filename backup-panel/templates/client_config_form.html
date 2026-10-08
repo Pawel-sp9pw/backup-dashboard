@@ -48,7 +48,7 @@
     <div class="form-row">
       <label>Usługa kopii</label>
       <input type="checkbox" name="backup_enabled" {% if not item or item.backup_enabled %}checked{% endif %}>
-      <span class="muted">Dla podmiotów zależnych z samymi certyfikatami zwykle zostaw wyłączone.</span>
+      <span class="muted">Dla podmiotów zależnych z samymi certyfikatami zwykle zostaw wyłączone. Klient bez tej opcji nie będzie widoczny w zakładce Kopie.</span>
     </div>
     <div class="form-row">
       <label>Typ DB2</label>
@@ -65,11 +65,12 @@
     </div>
     <div class="form-row">
       <label>Email powiadomień</label>
-      <input type="email" name="notification_email" value="{{ item.notification_email if item else '' }}">
+      <input type="text" name="notification_email" value="{{ (item.notification_email if item else '') or '' }}" placeholder="opcjonalnie">
+      <span class="muted">Pole opcjonalne. Możesz zostawić puste.</span>
     </div>
     <div class="form-row">
       <label>Notatka</label>
-      <input id="notesInput" type="text" name="notes" value="{{ item.notes if item else '' }}">
+      <input id="notesInput" type="text" name="notes" value="{{ (item.notes if item else '') or '' }}">
     </div>
     <button class="btn" type="submit">Zapisz</button>
     <a class="btn" href="/clients">Anuluj</a>
