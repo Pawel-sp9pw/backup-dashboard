@@ -24,12 +24,37 @@
   <a class="btn" href="/clients/new">Dodaj klienta</a>
 </section>
 <main class="table-wrap">
+  {% set all_ids = clients|map(attribute='client')|list %}
+  {% set children = {} %}
+  {% set roots = [] %}
+
+  {% for c in clients %}
+    {% set ns = namespace(parent='') %}
+    {% if '_by_' in c.client %}
+      {% set ns.parent = c.client.split('_by_')[-1] %}
+    {% elif '_' in c.client %}
+      {% set ns.parent = c.client.split('_')[0] %}
+    {% endif %}
+
+    {% if ns.parent and ns.parent in all_ids and ns.parent != c.client %}
+      {% if children.update({ns.parent: children.get(ns.parent, []) + [c]}) %}{% endif %}
+    {% else %}
+      {% if roots.append(c) %}{% endif %}
+    {% endif %}
+  {% endfor %}
+
   <table id="clientsConfigTable">
-    <thead><tr><th>Klient</th><th>Nazwa</th><th>Aktywny</th><th>Kopie</th><th>DB2</th><th>P1</th><th>Email</th><th>Notatka</th><th>Aktualizacja</th><th>Akcja</th></tr></thead>
+    <thead>
+      <tr><th>Klient</th><th>Nazwa</th><th>Aktywny</th><th>Kopie</th><th>DB2</th><th>P1</th><th>Email</th><th>Notatka</th><th>Aktualizacja</th><th>Akcja</th></tr>
+    </thead>
     <tbody>
-      {% for c in clients %}
-      <tr data-text="{{ (c.client ~ ' ' ~ (c.display_name or '') ~ ' ' ~ (c.notification_email or '') ~ ' ' ~ (c.notes or ''))|lower }}">
-        <td class="client"><a href="/client/{{ c.client }}">{{ c.client }}</a></td>
+      {% for c in roots %}
+      {% set sub = children.get(c.client, []) %}
+      <tr data-text="{{ (c.client ~ ' ' ~ (c.display_name or '') ~ ' ' ~ (c.notification_email or '') ~ ' ' ~ (c.notes or '') ~ ' ' ~ sub|map(attribute='client')|join(' '))|lower }}">
+        <td class="client">
+          <a href="/client/{{ c.client }}">{{ c.client }}</a>
+          {% if sub %}<div class="small muted">+ {{ sub|length }} podmiot techniczny</div>{% endif %}
+        </td>
         <td>{{ c.display_name or c.client }}</td>
         <td><span class="badge {{ 'ok' if c.active else 'error' }}">{{ 'tak' if c.active else 'nie' }}</span></td>
         <td><span class="badge {{ 'ok' if c.backup_enabled else 'unknown' }}">{{ 'tak' if c.backup_enabled else 'nie' }}</span></td>
@@ -40,6 +65,36 @@
         <td class="mono small">{{ c.updated_at or '-' }}</td>
         <td><a class="btn" href="/clients/{{ c.client }}/edit">Edytuj</a></td>
       </tr>
+
+      {% if sub %}
+      <tr class="child-row" data-text="{{ (c.client ~ ' ' ~ sub|map(attribute='client')|join(' '))|lower }}">
+        <td colspan="10">
+          <details>
+            <summary>Podmioty / katalogi techniczne przypisane do {{ c.client }}</summary>
+            <table class="nested-table">
+              <thead>
+                <tr><th>Katalog</th><th>Nazwa</th><th>Aktywny</th><th>Kopie</th><th>DB2</th><th>P1</th><th>Email</th><th>Notatka</th><th>Akcja</th></tr>
+              </thead>
+              <tbody>
+              {% for a in sub %}
+                <tr>
+                  <td class="client"><a href="/client/{{ a.client }}">{{ a.client }}</a></td>
+                  <td>{{ a.display_name or a.client }}</td>
+                  <td><span class="badge {{ 'ok' if a.active else 'error' }}">{{ 'tak' if a.active else 'nie' }}</span></td>
+                  <td><span class="badge {{ 'ok' if a.backup_enabled else 'unknown' }}">{{ 'tak' if a.backup_enabled else 'nie' }}</span></td>
+                  <td><span class="pill">{{ a.db2_type }}</span></td>
+                  <td><span class="badge {{ 'ok' if a.cert_p1_enabled else 'unknown' }}">{{ 'tak' if a.cert_p1_enabled else 'nie' }}</span></td>
+                  <td class="small">{{ a.notification_email or '-' }}</td>
+                  <td class="message" title="{{ a.notes or '' }}">{{ a.notes or '' }}</td>
+                  <td><a class="btn" href="/clients/{{ a.client }}/edit">Edytuj</a></td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </details>
+        </td>
+      </tr>
+      {% endif %}
       {% endfor %}
     </tbody>
   </table>
