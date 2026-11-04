@@ -51,6 +51,16 @@
       <span class="muted">Dla podmiotów zależnych z samymi certyfikatami zwykle zostaw wyłączone. Klient bez tej opcji nie będzie widoczny w zakładce Kopie.</span>
     </div>
     <div class="form-row">
+      <label>Retencja — liczba kopii</label>
+      <input type="number" min="1" step="1" name="retention_count" value="{{ item.retention_count if item and item.retention_count is not none else '' }}" placeholder="np. 7">
+      <span class="muted">Ile ostatnich kopii należy zachować. Puste = brak ustawionej polityki.</span>
+    </div>
+    <div class="form-row">
+      <label>Retencja — dni</label>
+      <input type="number" min="1" step="1" name="retention_days" value="{{ item.retention_days if item and item.retention_days is not none else '' }}" placeholder="np. 30">
+      <span class="muted">Opcjonalny okres przechowywania w dniach. To ustawienie samo nie usuwa plików.</span>
+    </div>
+    <div class="form-row">
       <label>Typ DB2</label>
       <select name="db2_type">
         {% set db2 = item.db2_type if item else 'none' %}
