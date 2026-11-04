@@ -1,0 +1,24 @@
+[Unit]
+Description=PC MED - safe backup retention for configured clients
+Wants=network-online.target
+After=network-online.target backup-panel.service
+ConditionPathExists=/opt/backup-panel/retention.py
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+EnvironmentFile=/etc/backup-panel.env
+EnvironmentFile=-/etc/pcmed-retention.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/flock -n /run/pcmed-retention.lock /usr/bin/python3 /opt/backup-panel/retention.py
+TimeoutStartSec=2h
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=false
+
+[Install]
+WantedBy=multi-user.target
