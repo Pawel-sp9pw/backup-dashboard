@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS zus_cert_status (
  PRIMARY KEY (client, cert_file));
 CREATE TABLE IF NOT EXISTS clients_config (
  client TEXT PRIMARY KEY, display_name TEXT, active INTEGER NOT NULL DEFAULT 1, backup_enabled INTEGER NOT NULL DEFAULT 1,
- db2_type TEXT NOT NULL DEFAULT 'none', cert_p1_enabled INTEGER NOT NULL DEFAULT 0, notification_email TEXT, notes TEXT, updated_at TEXT NOT NULL);
+ db2_type TEXT NOT NULL DEFAULT 'none', cert_p1_enabled INTEGER NOT NULL DEFAULT 0, notification_email TEXT, notes TEXT, retention_count INTEGER, retention_days INTEGER, updated_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_check_results_client_created ON check_results(client, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_check_results_created ON check_results(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notification_events_client_created ON notification_events(client, created_at DESC);
@@ -124,6 +124,8 @@ CREATE INDEX IF NOT EXISTS idx_zus_cert_results_created ON zus_cert_results(crea
 ''')
         for col in ("freshness_message", "db2_linux_message", "db2_windows_message", "freshness_file_path", "db2_linux_file_path", "db2_windows_file_path"):
             add_column_if_missing(conn, "client_status", col, "TEXT")
+        add_column_if_missing(conn, "clients_config", "retention_count", "INTEGER")
+        add_column_if_missing(conn, "clients_config", "retention_days", "INTEGER")
         ensure_clients_config(conn)
         prune_history(conn)
 
@@ -564,12 +566,26 @@ def client_config_edit(client):
                 db2_type = "none"
             email = request.form.get("notification_email", "").strip()
             notes = request.form.get("notes", "").strip()
+            # Puste pole oznacza brak ustalonej polityki retencji.
+            def optional_positive_int(field):
+                raw = request.form.get(field, "").strip()
+                if not raw:
+                    return None
+                try:
+                    value = int(raw)
+                except ValueError:
+                    abort(400, description=f"{field}: podaj liczbę całkowitą")
+                if value < 1 or value > 100000:
+                    abort(400, description=f"{field}: dozwolone wartości od 1 do 100000")
+                return value
+            retention_count = optional_positive_int("retention_count")
+            retention_days = optional_positive_int("retention_days")
             if client != "__new__" and old_client != new_client:
                 conn.execute("DELETE FROM clients_config WHERE client=?", (old_client,))
-            conn.execute("INSERT INTO clients_config (client, display_name, active, backup_enabled, db2_type, cert_p1_enabled, notification_email, notes, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(client) DO UPDATE SET display_name=excluded.display_name,active=excluded.active,backup_enabled=excluded.backup_enabled,db2_type=excluded.db2_type,cert_p1_enabled=excluded.cert_p1_enabled,notification_email=excluded.notification_email,notes=excluded.notes,updated_at=excluded.updated_at", (new_client, display_name, active, backup_enabled, db2_type, cert_p1_enabled, email, notes, now()))
+            conn.execute("INSERT INTO clients_config (client, display_name, active, backup_enabled, db2_type, cert_p1_enabled, notification_email, notes, retention_count, retention_days, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(client) DO UPDATE SET display_name=excluded.display_name,active=excluded.active,backup_enabled=excluded.backup_enabled,db2_type=excluded.db2_type,cert_p1_enabled=excluded.cert_p1_enabled,notification_email=excluded.notification_email,notes=excluded.notes,retention_count=excluded.retention_count,retention_days=excluded.retention_days,updated_at=excluded.updated_at", (new_client, display_name, active, backup_enabled, db2_type, cert_p1_enabled, email, notes, retention_count, retention_days, now()))
             return redirect(url_for("clients_config"))
         if client == "__new__":
-            cfg = {"client": "", "display_name": "", "active": 1, "backup_enabled": 1, "db2_type": "none", "cert_p1_enabled": 0, "notification_email": "", "notes": ""}
+            cfg = {"client": "", "display_name": "", "active": 1, "backup_enabled": 1, "db2_type": "none", "cert_p1_enabled": 0, "notification_email": "", "notes": "", "retention_count": None, "retention_days": None}
         else:
             row = conn.execute("SELECT * FROM clients_config WHERE client=?", (client,)).fetchone()
             if not row:
