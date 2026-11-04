@@ -53,7 +53,7 @@
 
   <table id="clientsConfigTable">
     <thead>
-      <tr><th>Klient</th><th>Nazwa</th><th>Aktywny</th><th>Kopie</th><th>DB2</th><th>P1</th><th>Email</th><th>Notatka</th><th>Aktualizacja</th><th>Akcja</th></tr>
+      <tr><th>Klient</th><th>Nazwa</th><th>Aktywny</th><th>Kopie</th><th>DB2</th><th>P1</th><th>Retencja</th><th>Email</th><th>Notatka</th><th>Aktualizacja</th><th>Akcja</th></tr>
     </thead>
     <tbody>
       {% for c in roots %}
@@ -68,6 +68,7 @@
         <td><span class="badge {{ 'ok' if c.backup_enabled else 'unknown' }}">{{ 'tak' if c.backup_enabled else 'nie' }}</span></td>
         <td><span class="pill">{{ c.db2_type }}</span></td>
         <td><span class="badge {{ 'ok' if c.cert_p1_enabled else 'unknown' }}">{{ 'tak' if c.cert_p1_enabled else 'nie' }}</span></td>
+        <td class="small">{{ (c.retention_count|string ~ " kopii") if c.retention_count else "-" }}{% if c.retention_days %} / {{ c.retention_days }} dni{% endif %}</td>
         <td class="small">{{ c.notification_email or '-' }}</td>
         <td class="message" title="{{ c.notes or '' }}">{{ c.notes or '' }}</td>
         <td class="mono small">{{ c.updated_at or '-' }}</td>
@@ -76,12 +77,12 @@
 
       {% if sub %}
       <tr class="child-row" data-text="{{ (c.client ~ ' ' ~ sub|map(attribute='client')|join(' '))|lower }}">
-        <td colspan="10">
+        <td colspan="11">
           <details>
             <summary>Podmioty zależne / katalogi techniczne przypisane do {{ c.client }}</summary>
             <table class="nested-table">
               <thead>
-                <tr><th>Katalog</th><th>Nazwa</th><th>Aktywny</th><th>Kopie</th><th>DB2</th><th>P1</th><th>Email</th><th>Notatka</th><th>Akcja</th></tr>
+                <tr><th>Katalog</th><th>Nazwa</th><th>Aktywny</th><th>Kopie</th><th>DB2</th><th>P1</th><th>Retencja</th><th>Email</th><th>Notatka</th><th>Akcja</th></tr>
               </thead>
               <tbody>
               {% for a in sub %}
@@ -92,7 +93,8 @@
                   <td><span class="badge {{ 'ok' if a.backup_enabled else 'unknown' }}">{{ 'tak' if a.backup_enabled else 'nie' }}</span></td>
                   <td><span class="pill">{{ a.db2_type }}</span></td>
                   <td><span class="badge {{ 'ok' if a.cert_p1_enabled else 'unknown' }}">{{ 'tak' if a.cert_p1_enabled else 'nie' }}</span></td>
-                  <td class="small">{{ a.notification_email or '-' }}</td>
+                  <td class="small">{{ (a.retention_count|string ~ " kopii") if a.retention_count else "-" }}{% if a.retention_days %} / {{ a.retention_days }} dni{% endif %}</td>
+        <td class="small">{{ a.notification_email or '-' }}</td>
                   <td class="message" title="{{ a.notes or '' }}">{{ a.notes or '' }}</td>
                   <td><a class="btn" href="/clients/{{ a.client }}/edit">Edytuj</a></td>
                 </tr>
