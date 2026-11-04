@@ -46,7 +46,7 @@
 </section>
 <main class="table-wrap">
   <table id="clientsTable">
-    <thead><tr><th>Klient</th><th>Status</th><th>Typ</th><th>Ostatnia kopia</th><th>Wiek</th><th>Liczba kopii DB2</th><th>Świeżość</th><th>DB2</th><th>Komunikat</th><th>Aktualizacja</th></tr></thead>
+    <thead><tr><th>Klient</th><th>Status</th><th>Typ</th><th>Ostatnia kopia</th><th>Wiek</th><th>Liczba kopii DB2</th><th>Retencja</th><th>Świeżość</th><th>DB2</th><th>Komunikat</th><th>Aktualizacja</th></tr></thead>
     <tbody>
       {% for c in clients %}
       {% if c.backup_enabled %}
@@ -57,6 +57,7 @@
         <td class="mono small">{{ c.last_backup_time or '-' }}</td>
         <td>{{ ('%.1f dni'|format(c.backup_age_days)) if c.backup_age_days is not none else '-' }}</td>
         <td>{{ c.backup_count if c.backup_count is not none else '-' }}</td>
+        <td>{{ (c.retention_count|string ~ " kopii") if c.retention_count else "-" }}{% if c.retention_days %} / {{ c.retention_days }} dni{% endif %}</td>
         <td><span class="pill">{{ c.freshness_status or '-' }}</span></td>
         <td><span class="pill">{{ c.db2_status or '-' }}</span></td>
         <td class="message" title="{{ c.display_message or '' }}">{{ c.display_message or '' }}</td>
