@@ -73,11 +73,11 @@ def validate_roots():
 
 
 def backup_sets(client_dir, db2_type):
-    """Scan regular files recursively, excluding any directory named '.skip'.
+    """Scan regular files recursively, excluding all dot-prefixed entries.
 
     One regular file is one retention unit; preserve its relative path.
-    Dotfiles in home directories are configuration, not backup payloads,
-    and are never moved. Symlinks and mount-point crossings are excluded.
+    Any file or directory beginning with "." (at any depth) is excluded
+    from both counting and deletion. Symlinks and mount points are excluded.
     """
     groups = []
     root_dev = client_dir.stat().st_dev
@@ -86,8 +86,8 @@ def backup_sets(client_dir, db2_type):
         accepted_dirs = []
         for dirname in dirs:
             candidate = root / dirname
-            if dirname == ".skip":
-                emit("skip_protected_directory", path=str(candidate))
+            if dirname.startswith("."):
+                emit("skip_hidden_directory", path=str(candidate))
                 continue
             try:
                 info = candidate.lstat()
