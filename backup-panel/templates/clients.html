@@ -68,7 +68,7 @@
         <td><span class="badge {{ 'ok' if c.backup_enabled else 'unknown' }}">{{ 'tak' if c.backup_enabled else 'nie' }}</span></td>
         <td><span class="pill">{{ c.db2_type }}</span></td>
         <td><span class="badge {{ 'ok' if c.cert_p1_enabled else 'unknown' }}">{{ 'tak' if c.cert_p1_enabled else 'nie' }}</span></td>
-        <td class="small">{{ (c.retention_count|string ~ " kopii") if c.retention_count else "-" }}{% if c.retention_days %} / {{ c.retention_days }} dni{% endif %}</td>
+        <td class="small">{{ (c.retention_count|string ~ " kopii") if c.retention_count else "-" }}{% if c.retention_days %} / {{ c.retention_days }} dni{% endif %}{% if c.retention_inherited_from %}<div class="muted">Dziedziczone: {{ c.retention_inherited_from }}</div>{% endif %}</td>
         <td class="small">{{ c.notification_email or '-' }}</td>
         <td class="message" title="{{ c.notes or '' }}">{{ c.notes or '' }}</td>
         <td class="mono small">{{ c.updated_at or '-' }}</td>
@@ -93,7 +93,7 @@
                   <td><span class="badge {{ 'ok' if a.backup_enabled else 'unknown' }}">{{ 'tak' if a.backup_enabled else 'nie' }}</span></td>
                   <td><span class="pill">{{ a.db2_type }}</span></td>
                   <td><span class="badge {{ 'ok' if a.cert_p1_enabled else 'unknown' }}">{{ 'tak' if a.cert_p1_enabled else 'nie' }}</span></td>
-                  <td class="small">{{ (a.retention_count|string ~ " kopii") if a.retention_count else "-" }}{% if a.retention_days %} / {{ a.retention_days }} dni{% endif %}</td>
+                  <td class="small">{{ (a.retention_count|string ~ " kopii") if a.retention_count else "-" }}{% if a.retention_days %} / {{ a.retention_days }} dni{% endif %}{% if a.retention_inherited_from %}<div class="muted">Dziedziczone: {{ a.retention_inherited_from }}</div>{% endif %}</td>
         <td class="small">{{ a.notification_email or '-' }}</td>
                   <td class="message" title="{{ a.notes or '' }}">{{ a.notes or '' }}</td>
                   <td><a class="btn" href="/clients/{{ a.client }}/edit">Edytuj</a></td>
