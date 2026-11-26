@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 import json
 import os
+import hmac
+import re
 import smtplib
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from pathlib import Path
 
-from flask import Flask, abort, jsonify, redirect, render_template, request, url_for
+from flask import Flask, abort, jsonify, redirect, render_template, request, url_for, Response
 
 APP_DIR = Path(__file__).resolve().parent
 DB_PATH = Path(os.environ.get("BACKUP_PANEL_DB", APP_DIR / "backup_panel.db"))
@@ -25,6 +27,13 @@ SMTP_FROM = os.environ.get("BACKUP_PANEL_SMTP_FROM", SMTP_USER or "backup-panel@
 SMTP_TLS = os.environ.get("BACKUP_PANEL_SMTP_TLS", "1") not in ("0", "false", "False", "no")
 
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("BACKUP_PANEL_UPLOAD_MAX_BYTES", str(16 * 1024 * 1024)))
+UPLOAD_USER = os.environ.get("BACKUP_PANEL_UPLOAD_USER", "pcmed-admin")
+UPLOAD_PASSWORD = os.environ.get("BACKUP_PANEL_UPLOAD_PASSWORD", "")
+P1_UPLOAD_ROOT = Path(os.environ.get("BACKUP_PANEL_P1_DIR", "/opt/cert"))
+ZUS_UPLOAD_ROOT = Path(os.environ.get("BACKUP_PANEL_ZUS_DIR", "/opt/lekarze"))
+UPLOAD_CLIENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+
 
 OK = {"OK", "CACHED_OK"}
 INFO = {"SKIPPED_LINUX_DB2", "CACHED_SKIPPED_LINUX_DB2", "SKIPPED_WINDOWS_DB2", "CACHED_SKIPPED_WINDOWS_DB2", "SKIPPED_NOT_DB2", "CACHED_SKIPPED_NOT_DB2", "SKIPPED_SYSTEM_DIR", "NOT_APPLICABLE", "CACHED_NOT_APPLICABLE"}
@@ -466,6 +475,105 @@ def service_clients(service):
         ensure_clients_config(conn)
         rows = [dict(r) for r in conn.execute(f"SELECT * FROM clients_config WHERE {where} ORDER BY client COLLATE NOCASE")]
     return rows
+
+
+def upload_auth_required():
+    """Uploads are disabled unless an admin password is configured."""
+    if not UPLOAD_PASSWORD or UPLOAD_PASSWORD == "CHANGE_ME":
+        abort(503, description="Ustaw BACKUP_PANEL_UPLOAD_PASSWORD na serwerze")
+    auth = request.authorization
+    if not (auth and hmac.compare_digest(auth.username or "", UPLOAD_USER)
+            and hmac.compare_digest(auth.password or "", UPLOAD_PASSWORD)):
+        return Response("Wymagane uwierzytelnienie administratora.", status=401,
+                        headers={"WWW-Authenticate": 'Basic realm="PCMED cert upload", charset="UTF-8"'})
+    return None
+
+
+def upload_client_list():
+    with db() as conn:
+        return [r["client"] for r in conn.execute(
+            "SELECT client FROM clients_config WHERE active=1 ORDER BY client COLLATE NOCASE")]
+
+
+def safe_upload_filename(name, ext_types):
+    if not name or name in {".", ".."} or len(name) > 180:
+        return False
+    if "/" in name or "\\" in name or name.startswith("."):
+        return False
+    if any(ord(char) < 32 or ord(char) == 127 for char in name):
+        return False
+    return Path(name).suffix.lower() in ext_types
+
+
+@app.route("/certificates/upload", methods=["GET", "POST"])
+def certificate_upload():
+    auth_error = upload_auth_required()
+    if auth_error:
+        return auth_error
+    kind = request.values.get("kind", "p1")
+    if kind not in ("p1", "zus"):
+        abort(400, description="Nieznany typ certyfikatu")
+    base = P1_UPLOAD_ROOT if kind == "p1" else ZUS_UPLOAD_ROOT
+    if request.method == "GET":
+        return render_template("certificate_upload.html", kind=kind,
+                               clients=upload_client_list(), uploaded=None)
+
+    # Reduce cross-site form submission risk when using HTTP Basic authentication.
+    origin = request.headers.get("Origin", "")
+    if not origin or origin.rstrip("/") != request.host_url.rstrip("/"):
+        abort(403, description="Nieprawidłowe pochodzenie żądania")
+    client = request.form.get("client", "").strip()
+    if not UPLOAD_CLIENT_RE.fullmatch(client) or client not in upload_client_list():
+        abort(400, description="Klient nie jest aktywny albo ma błędną nazwę")
+
+    files = [f for f in request.files.getlist("files") if f and f.filename]
+    password_file = request.files.get("password_file") if kind == "p1" else None
+    if not 1 <= len(files) <= 20:
+        abort(400, description="Wybierz od 1 do 20 certyfikatów")
+    ext_types = {".p12", ".pfx"} if kind == "p1" else {".pfx"}
+    if any(not safe_upload_filename(f.filename, ext_types) for f in files):
+        abort(400, description="Nieprawidłowe nazwy albo rozszerzenia certyfikatów")
+    if password_file and password_file.filename and password_file.filename != "p.txt":
+        abort(400, description="Plik z hasłami musi nazywać się p.txt")
+    if len({f.filename.casefold() for f in files}) != len(files):
+        abort(400, description="Wysyłane pliki mają powtarzające się nazwy")
+
+    if base.is_symlink() or not base.is_dir():
+        abort(503, description="Katalog certyfikatów nie istnieje albo jest symlinkiem")
+    target_dir = base / client
+    if target_dir.is_symlink():
+        abort(400, description="Katalog klienta nie może być dowiązaniem")
+    target_dir.mkdir(mode=0o700, exist_ok=True)
+    if target_dir.resolve().parent != base.resolve():
+        abort(400, description="Nieprawidłowa ścieżka klienta")
+
+    to_save = list(files)
+    if password_file and password_file.filename:
+        to_save.append(password_file)
+    for f in to_save:
+        dest = target_dir / f.filename
+        if dest.exists() or dest.is_symlink():
+            abort(409, description=f"Plik {f.filename} już istnieje; nadpisywanie jest wyłączone")
+
+    created = []
+    try:
+        for f in to_save:
+            dest = target_dir / f.filename
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+            if hasattr(os, "O_NOFOLLOW"):
+                flags |= os.O_NOFOLLOW
+            fd = os.open(dest, flags, 0o600)
+            created.append(dest)
+            with os.fdopen(fd, "wb") as stream:
+                f.save(stream)
+    except Exception:
+        for file_path in created:
+            file_path.unlink(missing_ok=True)
+        raise
+    app.logger.info("Certificate upload: type=%s client=%s count=%s", kind, client, len(created))
+    return render_template("certificate_upload.html", kind=kind,
+                           clients=upload_client_list(),
+                           uploaded={"client": client, "names": [f.name for f in created]})
 
 
 @app.route("/api/check-result", methods=["POST"])
