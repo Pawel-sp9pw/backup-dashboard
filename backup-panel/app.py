@@ -720,7 +720,7 @@ def zus_certificates():
 
 @app.route("/clients")
 def clients_config():
-    clients = fetch_clients(include_inactive=True)
+    clients = with_effective_retention(fetch_clients(include_inactive=True))
     return render_template("clients.html", clients=clients, generated_at=now())
 
 @app.route("/clients/new", methods=["GET", "POST"])
