@@ -260,16 +260,21 @@ def main():
     data = get_json(API_URL, authenticated=True)
     statuses = get_json(STATUS_URL)
     status_by_client = {row["client"]: row for row in statuses.get("clients", [])}
-    remaining = MAX_MOVES
+    total_moves = 0
     now_ts = datetime.now(timezone.utc).timestamp()
+    # The move limit applies to EACH client, not the whole job.  Never
+    # starve clients later in alphabetical order when one has a backlog.
     for cfg in data.get("items", []):
         client = cfg.get("client", "")
-        remaining = perform_retention(client, cfg, status_by_client.get(client, {}), now_ts, remaining)
-        if remaining == 0:
-            emit("move_limit_reached", max_moves=MAX_MOVES)
-            break
+        remaining = perform_retention(client, cfg, status_by_client.get(client, {}), now_ts, MAX_MOVES)
+        moved = MAX_MOVES - remaining
+        total_moves += moved
+        if moved == MAX_MOVES:
+            emit("client_move_limit_reached", client=client, max_moves=MAX_MOVES)
+        if moved:
+            emit("client_finish", client=client, moves=moved)
     purge_quarantine(now_ts)
-    emit("finish", moves=MAX_MOVES - remaining)
+    emit("finish", moves=total_moves)
 
 
 if __name__ == "__main__":
