@@ -13,13 +13,17 @@
 
 Automat bierze wyłącznie klientów aktywnych z włączoną usługą kopii. Aby w ogóle ruszyć kopie, panel musi pokazywać status \`OK\`, w tym \`freshness_status=OK\`, a dla DB2 także pozytywny wynik odpowiedniego \`db2ckbkp\` (\`OK\`/\`CACHED_OK\`). Retencja bez skonfigurowanych wartości jest pomijana.
 
-Jednostka retencyjna jest **całym zestawem kopii**, nie dowolnym plikiem:
+Jednostką retencji jest **każdy pełny plik kopii**, niezależnie od liczby podkatalogów. Skrypt skanuje rekurencyjnie /home/<klient>:
 
-- Bezpośrednie katalogi klienta o nazwie rozpoczynającej się \`kopie \`, \`kopie_\`, \`backup \`, \`backup_\` są traktowane jako zestawy. Dla katalogu używany jest najnowszy czas modyfikacji pliku znajdującego się wewnątrz.
-- Pliki DB2 bezpośrednio w \`/home/<klient>\`, których nazwa zawiera \`DB2\`, \`mediqus\`, \`DBPART000\` itp., mogą być traktowane jako zestawy. Części \`.001\`, \`.002\` itd. w rozpoznanej rodzinie \`DBPART\` są przesuwane razem.
-- Pozostałe, nieznane struktury (np. pliki umieszczone wewnątrz katalogu \`mediqus\`, luźne ZIP-y bez jednoznacznej jednostki retencyjnej) **nie są usuwane**. Trzeba je najpierw jawnie obsłużyć i przetestować.
+- Klienci DB2 (Linux/Windows): pliki o nazwie pasującej do wzorca \`*.DBPART000.YYYYMMDDHHMMSS.NNN\` (i analogicznych DBPARTnnn), z sufiksami \`.001\`, \`.002\` itd. **Każdy plik to odrębna pełna kopia w tym wdrożeniu PCMED** — nie są scalane jako części.
+- Klienci bez DB2: każdy plik \`.zip\` to oddzielna kopia.
+- Pliki poniżej 100 MiB, linki symboliczne, logi i znaczniki stanu nie są kandydatami.
+- Retencja obejmuje wszystkie rozpoznane pliki klienta łącznie — również te z katalogów \`PENDRIVE\`, \`DB2_BACKUP\`, \`BACKUP_DB2\`, \`dzienne\`, \`kopie\` itd. Nie są przenoszone całe katalogi.
 
-Przy \`retention_count=N\`: zachowuje co najmniej \`max(2,N)\` **najnowszych zestawów**. Przy \`retention_days=D\`: kwalifikuje zestawy starsze niż D dni. Jeśli oba parametry podano, obydwa warunki muszą być spełnione. Dodatkowo zestaw musi mieć minimum 48 godzin i łącznie muszą istnieć co najmniej 3 zestawy. Jedno uruchomienie przenosi najwyżej 20 zestawów (limit regulowany).
+Przy \`retention_count=N\`: zachowuje co najmniej \`max(2,N)\` najnowszych rozpoznanych plików klienta. Przy \`retention_days=D\`: kwalifikuje kopie starsze niż D dni. Przy obu parametrach oba warunki muszą zostać spełnione. Wiek jest liczony od czasu modyfikacji pliku. Dodatkowo kandydat musi mieć co najmniej 48 godzin; w kolekcji muszą istnieć minimum 3 kopie. Jedno uruchomienie przenosi do kwarantanny najwyżej 20 plików.
+
+Kwarantanna zachowuje ścieżkę relatywną pliku: \`/home/.pcmed-retention-quarantine/<klient>/<id>/data/<oryginalny-podkatalog>/<plik>\`. Metadane oryginalnych lokalizacji znajdują się w \`manifest.json\`.
+
 
 **Uwaga:** samo znalezienie pliku nie dowodzi możliwości odtworzenia. Status DB2 w panelu dotyczy ostatniego zweryfikowanego obrazu, nie wszystkich starszych zestawów. Zanim włączysz trwałe kasowanie, potwierdź testem odtwarzania politykę backupu klienta i sprawdź dziennik decyzji.
 
