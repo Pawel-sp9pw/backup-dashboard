@@ -465,6 +465,65 @@ def cert_summary(rows):
     return s
 
 
+def configured_parent(client, notes, all_clients):
+    """Match the Clients tab's parent grouping, without treating hyphens as hierarchy."""
+    notes = str(notes or "")
+    parent = ""
+    if "parent:" in notes:
+        tail = notes.split("parent:", 1)[1].split()
+        parent = tail[0] if tail else ""
+    elif "_by_" in client:
+        parent = client.rsplit("_by_", 1)[-1]
+    elif "_" in client:
+        possible = client.split("_", 1)[0]
+        if possible in all_clients:
+            parent = possible
+    return parent if parent in all_clients and parent != client else ""
+
+
+def with_effective_retention(rows):
+    """Inherit only missing retention fields from active parent(s).
+
+    Child-specific count/days override their corresponding inherited fields.
+    The backup_enabled and active flags are NEVER inherited.
+    """
+    lookup = {row["client"]: row for row in rows}
+    memo = {}
+
+    def resolve(client, visiting):
+        if client in memo:
+            return memo[client]
+        current = lookup[client]
+        count, days = current.get("retention_count"), current.get("retention_days")
+        owner = client if (count is not None or days is not None) else ""
+        if client in visiting:
+            return count, days, owner
+        parent = configured_parent(client, current.get("notes"), lookup)
+        if parent and lookup[parent].get("active"):
+            ancestor_count, ancestor_days, ancestor_owner = resolve(parent, visiting | {client})
+            inherited = False
+            if count is None and ancestor_count is not None:
+                count = ancestor_count
+                inherited = True
+            if days is None and ancestor_days is not None:
+                days = ancestor_days
+                inherited = True
+            if inherited:
+                owner = ancestor_owner or parent
+        memo[client] = (count, days, owner)
+        return memo[client]
+
+    result = []
+    for row in rows:
+        item = dict(row)
+        count, days, owner = resolve(item["client"], set())
+        item["retention_count"] = count
+        item["retention_days"] = days
+        item["retention_inherited_from"] = owner if owner and owner != item["client"] else None
+        result.append(item)
+    return result
+
+
 def service_clients(service):
     where = "active=1"
     if service == "backup": where = "active=1 AND backup_enabled=1"
@@ -473,8 +532,17 @@ def service_clients(service):
     elif service == "cert-p1": where = "active=1 AND cert_p1_enabled=1"
     with db() as conn:
         ensure_clients_config(conn)
-        rows = [dict(r) for r in conn.execute(f"SELECT * FROM clients_config WHERE {where} ORDER BY client COLLATE NOCASE")]
-    return rows
+        all_rows = [dict(r) for r in conn.execute(
+            "SELECT * FROM clients_config ORDER BY client COLLATE NOCASE")]
+    effective = with_effective_retention(all_rows)
+    # Return only enabled clients, but resolve parents against all configurations.
+    return [r for r in effective if (
+        r["active"] == 1 and
+        (service not in ("backup", "db2-linux", "db2-windows") or r["backup_enabled"] == 1) and
+        (service != "db2-linux" or r["db2_type"] == "linux") and
+        (service != "db2-windows" or r["db2_type"] == "windows") and
+        (service != "cert-p1" or r["cert_p1_enabled"] == 1)
+    )]
 
 
 def upload_auth_required():
