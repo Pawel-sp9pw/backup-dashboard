@@ -28,7 +28,8 @@ MIN_AGE_HOURS = max(48, int(os.environ.get("PCMED_RETENTION_MIN_AGE_HOURS", "48"
 MAX_MOVES = max(1, int(os.environ.get("PCMED_RETENTION_MAX_MOVES", "20")))
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 DB2_RE = re.compile(r"(db2|mediqus|dbpart\d+)", re.I)
-FOLDER_RE = re.compile(r"^(kopie(?:[ _-]|$)|backup(?:[ _-]|$))", re.I)
+FOLDER_RE = re.compile(r"^(kopie|backup_db2|db2_backup|backup|dzienne|pendrive)(?:[ _-]|$)", re.I)
+DB2_PART_FILE = re.compile(r"\.DBPART\d+\.\d{14}\.(\d{3})$", re.I)
 PART_RE = re.compile(r"^(.*\.(?:dbpart\d+)\.[^.]+)\.(\d{3})$", re.I)
 LOG_FILE = os.environ.get("PCMED_RETENTION_LOG", "/var/log/pcmed-retention.jsonl")
 
@@ -95,6 +96,36 @@ def scan_tree(path):
     return latest
 
 
+def stream_for_dir(name):
+    """Retain separate independent streams; never let a PENDRIVE run delete DB2_BACKUP."""
+    lowered = name.lower()
+    if lowered.startswith("pendrive"):
+        return "pendrive"
+    if lowered.startswith("dzienne"):
+        return "dzienne"
+    if lowered.startswith("db2_backup"):
+        return "db2_backup"
+    if lowered.startswith("backup_db2"):
+        return "backup_db2"
+    if lowered.startswith("kopie"):
+        return "kopie"
+    return "backup"
+
+
+def contains_unsafe_db2_parts(directory):
+    """Conservative safeguard for DB2 backup parts spread across daily folders.
+
+    A DBPART*.002 or later image may rely on files stored in other
+    folders. Such folders require explicit grouping before any move.
+    """
+    for base, dirs, files in os.walk(directory, followlinks=False):
+        for name in files:
+            match = DB2_PART_FILE.search(name)
+            if match and int(match.group(1)) > 1:
+                return True
+    return False
+
+
 def backup_sets(client_dir, db2_type):
     """Only top-level backup directories and direct DB2 files.
 
@@ -109,7 +140,12 @@ def backup_sets(client_dir, db2_type):
         if entry.is_dir() and FOLDER_RE.match(entry.name):
             try:
                 mtime = scan_tree(entry)
-                groups["dir:" + entry.name] = {"paths": [entry], "mtime": mtime}
+                if contains_unsafe_db2_parts(entry):
+                    emit("skip_multipart_db2_directory", path=str(entry),
+                         reason="DB2 parts .002+ may span other folders")
+                    continue
+                stream = stream_for_dir(entry.name)
+                groups["dir:" + entry.name] = {"paths": [entry], "mtime": mtime, "stream": stream}
             except (OSError, ValueError) as exc:
                 emit("skip_unsafe_directory", path=str(entry), reason=str(exc))
         elif entry.is_file() and db2_type in ("linux", "windows") and DB2_RE.search(entry.name):
@@ -118,7 +154,7 @@ def backup_sets(client_dir, db2_type):
             family = match.group(1) if match else entry.name
             key = "db2:" + family
             info = entry.stat(follow_symlinks=False)
-            group = groups.setdefault(key, {"paths": [], "mtime": 0.0})
+            group = groups.setdefault(key, {"paths": [], "mtime": 0.0, "stream": "db2_direct"})
             group["paths"].append(entry)
             group["mtime"] = max(group["mtime"], info.st_mtime)
     return sorted(groups.values(), key=lambda x: x["mtime"], reverse=True)
@@ -197,25 +233,34 @@ def perform_retention(client, cfg, status, now_ts, remaining):
         return remaining
 
     groups = backup_sets(client_dir, db2_type)
-    if len(groups) < 3:
-        emit("skip_few_backup_sets", client=client, groups=len(groups))
-        return remaining
+    by_stream = {}
+    for group in groups:
+        by_stream.setdefault(group["stream"], []).append(group)
+    if not by_stream:
+        emit("skip_few_backup_sets", client=client, groups=0)
     keep = max(2, count or 2)
     policy = {"count": count, "days": days}
-    for idx, group in enumerate(groups):
-        if idx < keep or len(groups) - idx <= 0:
+    for stream, stream_groups in sorted(by_stream.items()):
+        emit("stream_summary", client=client, stream=stream,
+             groups=len(stream_groups), keep=keep)
+        if len(stream_groups) < 3 or len(stream_groups) <= keep:
             continue
-        age_hours = (now_ts - group["mtime"]) / 3600
-        if age_hours < MIN_AGE_HOURS:
-            continue
-        if days is not None and age_hours < days * 24:
-            continue
-        names = [p.name for p in group["paths"]]
-        emit("candidate", client=client, paths=names, age_days=round(age_hours / 24, 1),
-             retention_count=count, retention_days=days, action="quarantine" if EXECUTE else "dry_run")
-        if EXECUTE and remaining > 0:
-            quarantine_group(client, group, policy, now_ts)
-            remaining -= 1
+        for idx, group in enumerate(stream_groups):
+            if idx < keep:
+                continue
+            age_hours = (now_ts - group["mtime"]) / 3600
+            if age_hours < MIN_AGE_HOURS:
+                continue
+            if days is not None and age_hours < days * 24:
+                continue
+            names = [p.name for p in group["paths"]]
+            emit("candidate", client=client, stream=stream, paths=names,
+                 age_days=round(age_hours / 24, 1), retention_count=count,
+                 retention_days=days,
+                 action="quarantine" if EXECUTE else "dry_run")
+            if EXECUTE and remaining > 0:
+                quarantine_group(client, group, policy, now_ts)
+                remaining -= 1
     return remaining
 
 
