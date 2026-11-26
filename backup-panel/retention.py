@@ -194,6 +194,9 @@ def perform_retention(client, cfg, status, now_ts, remaining):
         emit("skip_no_policy", client=client)
         return remaining
     db2_type = str(cfg.get("db2_type") or "none").lower()
+    if cfg.get("retention_inherited_from"):
+        emit("inherited_policy", client=client, parent=cfg["retention_inherited_from"],
+             retention_count=count, retention_days=days)
     if not safe_to_move(status, db2_type):
         emit("skip_unhealthy", client=client, status=status.get("overall_status"))
         return remaining
