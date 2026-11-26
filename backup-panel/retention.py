@@ -73,53 +73,47 @@ def validate_roots():
 
 
 def backup_sets(client_dir, db2_type):
-    """Find individual, complete backups recursively, regardless of folder name.
+    """Scan regular files recursively, excluding any directory named '.skip'.
 
-    DB2: each recognized DBPART image filename, including suffix .001/.002,
-    is a separate *complete* backup, per the PCMED backup convention.
-    Non-DB2: each ZIP archive is a separate backup.
-
-    We do not touch arbitrary files, backup logs, status markers or folders.
+    One regular file is one retention unit; preserve its relative path.
+    Dotfiles in home directories are configuration, not backup payloads,
+    and are never moved. Symlinks and mount-point crossings are excluded.
     """
-    if db2_type in ("linux", "windows"):
-        # e.g. MEDIQUS.0.DB2.DBPART000.20261125050112.001
-        pattern = re.compile(r"(?i)^.+\.DBPART\d+\.\d{14}\.\d{3}$")
-    else:
-        pattern = re.compile(r"(?i)^.+\.zip$")
-    candidates = []
+    groups = []
+    root_dev = client_dir.stat().st_dev
     for base, dirs, files in os.walk(client_dir, topdown=True, followlinks=False):
         root = Path(base)
-        safe_dirs = []
+        accepted_dirs = []
         for dirname in dirs:
-            p = root / dirname
-            if p.is_symlink():
-                emit("skip_link", path=str(p))
-            elif p.is_dir() and p.stat(follow_symlinks=False).st_dev == client_dir.stat().st_dev:
-                safe_dirs.append(dirname)
-            else:
-                emit("skip_unsafe_directory", path=str(p))
-        dirs[:] = safe_dirs
-
-        for filename in files:
-            if not pattern.fullmatch(filename):
+            candidate = root / dirname
+            if dirname == ".skip":
+                emit("skip_protected_directory", path=str(candidate))
                 continue
-            item = root / filename
             try:
-                info = item.stat(follow_symlinks=False)
-                if not stat.S_ISREG(info.st_mode) or item.is_symlink():
-                    emit("skip_unsafe_file", path=str(item))
-                    continue
-                if info.st_size < 100 * 1024 * 1024:
-                    emit("skip_small_file", path=str(item), size=info.st_size)
-                    continue
-                if info.st_dev != client_dir.stat().st_dev:
-                    emit("skip_other_filesystem", path=str(item))
-                    continue
-                candidates.append({"paths": [item], "mtime": info.st_mtime,
-                                   "size": info.st_size, "stream": "backup_files"})
+                info = candidate.lstat()
+                if stat.S_ISDIR(info.st_mode) and info.st_dev == root_dev:
+                    accepted_dirs.append(dirname)
+                else:
+                    emit("skip_unsafe_directory", path=str(candidate))
             except OSError as exc:
-                emit("skip_unreadable_file", path=str(item), error=str(exc))
-    return sorted(candidates, key=lambda x: (x["mtime"], str(x["paths"][0])), reverse=True)
+                emit("skip_unsafe_directory", path=str(candidate), reason=str(exc))
+        dirs[:] = accepted_dirs
+        for filename in files:
+            file_path = root / filename
+            # Protect user/service config files (e.g. .bashrc, .profile).
+            if filename.startswith("."):
+                emit("skip_hidden_file", path=str(file_path))
+                continue
+            try:
+                st = file_path.lstat()
+                if not stat.S_ISREG(st.st_mode) or st.st_dev != root_dev:
+                    emit("skip_unsafe_file", path=str(file_path))
+                    continue
+                groups.append({"paths": [file_path], "mtime": st.st_mtime,
+                               "size": st.st_size, "stream": "all_files"})
+            except OSError as exc:
+                emit("skip_unreadable_file", path=str(file_path), error=str(exc))
+    return sorted(groups, key=lambda g: (g["mtime"], str(g["paths"][0])), reverse=True)
 
 
 def safe_to_move(status, db2_type):
