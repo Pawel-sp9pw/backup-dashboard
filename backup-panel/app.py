@@ -520,7 +520,9 @@ def certificate_upload():
 
     # Reduce cross-site form submission risk when using HTTP Basic authentication.
     origin = request.headers.get("Origin", "")
-    if not origin or origin.rstrip("/") != request.host_url.rstrip("/"):
+    from urllib.parse import urlsplit
+    origin_host = urlsplit(origin).netloc if origin else ""
+    if not origin_host or not hmac.compare_digest(origin_host.lower(), request.host.lower()):
         abort(403, description="Nieprawidłowe pochodzenie żądania")
     client = request.form.get("client", "").strip()
     if not UPLOAD_CLIENT_RE.fullmatch(client) or client not in upload_client_list():
