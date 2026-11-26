@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PC MED — wgrywanie certyfikatów</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div>
+    <h1>Wgraj certyfikaty {{ 'P1' if kind == 'p1' else 'ZUS lekarzy' }}</h1>
+    <p>Wybierz klienta i pliki. Pliki zostaną zapisane bez nadpisywania istniejących.</p>
+  </div>
+  <nav class="topnav">
+    <a href="/">Kopie</a>
+    <a href="/certificates">Certyfikaty P1</a>
+    <a href="/zus-certificates">Certyfikaty ZUS</a>
+    <a href="/clients">Klienci</a>
+  </nav>
+</header>
+<main class="table-wrap">
+  {% if uploaded %}
+  <div class="card ok">
+    <strong>Wgrano {{ uploaded.names|length }} plików dla {{ uploaded.client }}</strong>
+    <p>Pliki zostaną sprawdzone przy kolejnym uruchomieniu workflowu n8n. Sam upload nie oznacza zweryfikowania certyfikatu.</p>
+    <ul>{% for name in uploaded.names %}<li>{{ name }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+  <form class="form-card" method="post" enctype="multipart/form-data">
+    <input type="hidden" name="kind" value="{{ kind }}">
+    <div class="form-row">
+      <label for="client">Klient / katalog docelowy</label>
+      <select id="client" name="client" required>
+        <option value="">— wybierz klienta —</option>
+        {% for client in clients %}
+        <option value="{{ client }}" {% if uploaded and uploaded.client == client %}selected{% endif %}>{{ client }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-row">
+      <label for="files">Certyfikaty {{ '.p12 / .pfx' if kind == 'p1' else '.pfx' }}</label>
+      <input id="files" type="file" name="files" multiple required
+             accept="{{ '.p12,.pfx' if kind == 'p1' else '.pfx' }}">
+      <span class="muted">Maksymalnie 20 plików, łącznie do 16 MiB. Nazwy są zachowywane.</span>
+    </div>
+    {% if kind == 'p1' %}
+    <div class="form-row">
+      <label for="password_file">Plik z hasłami (opcjonalnie)</label>
+      <input id="password_file" type="file" name="password_file" accept=".txt">
+      <span class="muted">Jeśli wysyłasz hasła, plik musi nazywać się p.txt. Istniejący p.txt nie zostanie nadpisany.</span>
+    </div>
+    {% endif %}
+    <button class="btn" type="submit">Wgraj pliki</button>
+    <a class="btn" href="{{ '/certificates' if kind == 'p1' else '/zus-certificates' }}">Wróć</a>
+  </form>
+</main>
+</body>
+</html>
