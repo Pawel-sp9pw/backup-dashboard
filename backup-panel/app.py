@@ -704,7 +704,8 @@ def api_history(client):
 
 @app.route("/")
 def index():
-    clients = fetch_clients(); return render_template("index.html", clients=clients, summary=summarize(clients), generated_at=now())
+    clients = with_effective_retention(fetch_clients())
+    return render_template("index.html", clients=clients, summary=summarize(clients), generated_at=now())
 
 @app.route("/certificates")
 def certificates():
