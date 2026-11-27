@@ -55,7 +55,7 @@
         <td><span class="badge {{ c.overall_status|lower }}">{{ c.overall_status }}</span></td>
         <td><span class="platform"><span class="platform-icon">{{ c.backup_system_icon }}</span><span class="platform-label">{{ c.backup_system_label }}</span></span></td>
         <td class="mono small">{{ c.last_backup_time or '-' }}</td>
-        <td>{{ ('%.1f dni'|format(c.backup_age_days)) if c.backup_age_days is not none else '-' }}</td>
+        <td>{% if c.backup_age_hours is not none %}{% if c.backup_age_hours < 24 %}{{ '%.1f godz.'|format(c.backup_age_hours) }}{% else %}{{ '%.1f dni'|format(c.backup_age_hours / 24) }}{% endif %}{% else %}-{% endif %}</td>
         <td>{{ c.backup_count if c.backup_count is not none else '-' }}</td>
         <td>{{ (c.retention_count|string ~ " kopii") if c.retention_count else "-" }}{% if c.retention_days %} / {{ c.retention_days }} dni{% endif %}{% if c.retention_inherited_from %}<div class="small muted">Dziedziczone: {{ c.retention_inherited_from }}</div>{% endif %}</td>
         <td class="small">{% if c.freshness_limit_hours is not none %}{{ (c.freshness_limit_hours // 24)|string ~ ' dni' if c.freshness_limit_hours % 24 == 0 else c.freshness_limit_hours|string ~ ' godz.' }}{% else %}Domyślnie{% endif %}</td>
