@@ -61,6 +61,21 @@
       <span class="muted">Opcjonalny okres przechowywania w dniach. To ustawienie samo nie usuwa plików.</span>
     </div>
     <div class="form-row">
+      <label>Brak aktualnej kopii — próg błędu</label>
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        {% set freshness_hours = item.freshness_limit_hours if item and item.freshness_limit_hours is defined else none %}
+        {% set use_days = freshness_hours is not none and freshness_hours % 24 == 0 %}
+        <input type="number" min="1" step="1" name="freshness_limit"
+               value="{{ (freshness_hours // 24 if use_days else freshness_hours) if freshness_hours is not none else '' }}"
+               placeholder="np. 36" style="max-width:180px">
+        <select name="freshness_unit" style="max-width:150px">
+          <option value="hours" {% if not use_days %}selected{% endif %}>godzin</option>
+          <option value="days" {% if use_days %}selected{% endif %}>dni</option>
+        </select>
+      </div>
+      <span class="muted">Po przekroczeniu wskazanego wieku ostatniej kopii panel zgłosi błąd. Np. 36 godzin, 8 dni, 35 dni. Puste = dotychczasowe zasady monitoringu. Nie dotyczy retencji plików.</span>
+    </div>
+    <div class="form-row">
       <label>Typ DB2</label>
       <select name="db2_type">
         {% set db2 = item.db2_type if item else 'none' %}
