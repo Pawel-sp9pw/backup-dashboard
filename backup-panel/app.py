@@ -795,12 +795,19 @@ def client_config_edit(client):
                 return value
             retention_count = optional_positive_int("retention_count")
             retention_days = optional_positive_int("retention_days")
+            freshness_value = optional_positive_int("freshness_limit")
+            freshness_unit = request.form.get("freshness_unit", "hours")
+            if freshness_unit not in {"hours", "days"}:
+                abort(400, description="Nieprawidłowa jednostka świeżości")
+            freshness_limit_hours = freshness_value * (24 if freshness_unit == "days" else 1) if freshness_value is not None else None
+            if freshness_limit_hours is not None and freshness_limit_hours > 87600:
+                abort(400, description="Maksymalny próg świeżości to 3650 dni")
             if client != "__new__" and old_client != new_client:
                 conn.execute("DELETE FROM clients_config WHERE client=?", (old_client,))
-            conn.execute("INSERT INTO clients_config (client, display_name, active, backup_enabled, db2_type, cert_p1_enabled, notification_email, notes, retention_count, retention_days, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(client) DO UPDATE SET display_name=excluded.display_name,active=excluded.active,backup_enabled=excluded.backup_enabled,db2_type=excluded.db2_type,cert_p1_enabled=excluded.cert_p1_enabled,notification_email=excluded.notification_email,notes=excluded.notes,retention_count=excluded.retention_count,retention_days=excluded.retention_days,updated_at=excluded.updated_at", (new_client, display_name, active, backup_enabled, db2_type, cert_p1_enabled, email, notes, retention_count, retention_days, now()))
+            conn.execute("INSERT INTO clients_config (client, display_name, active, backup_enabled, db2_type, cert_p1_enabled, notification_email, notes, retention_count, retention_days, freshness_limit_hours, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(client) DO UPDATE SET display_name=excluded.display_name,active=excluded.active,backup_enabled=excluded.backup_enabled,db2_type=excluded.db2_type,cert_p1_enabled=excluded.cert_p1_enabled,notification_email=excluded.notification_email,notes=excluded.notes,retention_count=excluded.retention_count,retention_days=excluded.retention_days,freshness_limit_hours=excluded.freshness_limit_hours,updated_at=excluded.updated_at", (new_client, display_name, active, backup_enabled, db2_type, cert_p1_enabled, email, notes, retention_count, retention_days, freshness_limit_hours, now()))
             return redirect(url_for("clients_config"))
         if client == "__new__":
-            cfg = {"client": "", "display_name": "", "active": 1, "backup_enabled": 1, "db2_type": "none", "cert_p1_enabled": 0, "notification_email": "", "notes": "", "retention_count": None, "retention_days": None}
+            cfg = {"client": "", "display_name": "", "active": 1, "backup_enabled": 1, "db2_type": "none", "cert_p1_enabled": 0, "notification_email": "", "notes": "", "retention_count": None, "retention_days": None, "freshness_limit_hours": None
         else:
             row = conn.execute("SELECT * FROM clients_config WHERE client=?", (client,)).fetchone()
             if not row:
