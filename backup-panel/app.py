@@ -122,7 +122,7 @@ CREATE TABLE IF NOT EXISTS zus_cert_status (
  PRIMARY KEY (client, cert_file));
 CREATE TABLE IF NOT EXISTS clients_config (
  client TEXT PRIMARY KEY, display_name TEXT, active INTEGER NOT NULL DEFAULT 1, backup_enabled INTEGER NOT NULL DEFAULT 1,
- db2_type TEXT NOT NULL DEFAULT 'none', cert_p1_enabled INTEGER NOT NULL DEFAULT 0, notification_email TEXT, notes TEXT, retention_count INTEGER, retention_days INTEGER, updated_at TEXT NOT NULL);
+ db2_type TEXT NOT NULL DEFAULT 'none', cert_p1_enabled INTEGER NOT NULL DEFAULT 0, notification_email TEXT, notes TEXT, retention_count INTEGER, retention_days INTEGER, freshness_limit_hours INTEGER, updated_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_check_results_client_created ON check_results(client, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_check_results_created ON check_results(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notification_events_client_created ON notification_events(client, created_at DESC);
@@ -135,6 +135,7 @@ CREATE INDEX IF NOT EXISTS idx_zus_cert_results_created ON zus_cert_results(crea
             add_column_if_missing(conn, "client_status", col, "TEXT")
         add_column_if_missing(conn, "clients_config", "retention_count", "INTEGER")
         add_column_if_missing(conn, "clients_config", "retention_days", "INTEGER")
+        add_column_if_missing(conn, "clients_config", "freshness_limit_hours", "INTEGER")
         ensure_clients_config(conn)
         prune_history(conn)
 
@@ -287,8 +288,35 @@ def backup_system(row):
     return "–", "Nieustalony"
 
 
+def effective_freshness(row):
+    """Apply custom maximum backup age, preserving unrelated verification errors."""
+    raw = row["freshness_status"]
+    keys = row.keys() if hasattr(row, "keys") else row
+    limit = row["freshness_limit_hours"] if "freshness_limit_hours" in keys else None
+    if limit is None:
+        return raw, None
+    backup_time = parse_dt(row["last_backup_time"])
+    if backup_time:
+        if backup_time.tzinfo is None:
+            backup_time = backup_time.replace(tzinfo=timezone.utc)
+        age = max(0, (datetime.now(timezone.utc) - backup_time.astimezone(timezone.utc)).total_seconds() / 3600)
+    else:
+        age = row["backup_age_hours"]
+    if age is None:
+        return raw, None
+    try:
+        age, limit = float(age), float(limit)
+    except (ValueError, TypeError):
+        return raw, None
+    if age > limit and raw in ("OK", "OLD", "CACHED_OK"):
+        return "OLD", f"Kopia ma {age:.1f} godz.; dopuszczalny wiek: {limit:g} godz."
+    if age <= limit and raw == "OLD":
+        return "OK", None
+    return raw, None
+
+
 def overall(row):
-    freshness = row["freshness_status"]
+    freshness, _ = effective_freshness(row)
     statuses = [freshness, row["db2_linux_status"], row["db2_windows_status"]]
     if freshness in ("BRAK", "OLD", "ERROR", "NO_DB2_BACKUP", "SKIPPED_NO_BACKUP"):
         return "ERROR"
@@ -310,6 +338,9 @@ def clean_message(message, limit=500):
 
 
 def display_message(row):
+    effective_status, freshness_error = effective_freshness(row)
+    if freshness_error and row["overall_status"] == "ERROR":
+        return freshness_error
     if row["overall_status"] == "ERROR":
         if row["freshness_status"] in ("BRAK", "OLD", "ERROR", "NO_DB2_BACKUP", "SKIPPED_NO_BACKUP") and row["freshness_message"]:
             return clean_message(row["freshness_message"])
@@ -323,6 +354,11 @@ def display_message(row):
 
 
 def decorate_client(row):
+    effective_status, effective_message = effective_freshness(row)
+    row["overall_status"] = overall(row)
+    row["freshness_status"] = effective_status
+    if effective_message:
+        row["freshness_message"] = effective_message
     icon, label = backup_system(row)
     row["backup_system_icon"] = icon
     row["backup_system_label"] = label
@@ -352,7 +388,7 @@ def notification_config(conn, client):
 
 
 def maybe_notify(conn, client):
-    row = conn.execute("SELECT * FROM client_status WHERE client=?", (client,)).fetchone()
+    row = conn.execute("SELECT cs.*, cc.freshness_limit_hours FROM client_status cs LEFT JOIN clients_config cc ON cc.client=cs.client WHERE cs.client=?", (client,)).fetchone()
     if not row: return
     status = overall(row)
     cfg = notification_config(conn, client)
@@ -391,7 +427,7 @@ def save_item(item):
         elif item["source"] == "db2_linux": fields.update({"db2_linux_status": item["status"], "db2_linux_checked_at": item["checked_at"], "db2_linux_message": item["message"], "db2_linux_file_path": item["file_path"]})
         elif item["source"] == "db2_windows": fields.update({"db2_windows_status": item["status"], "db2_windows_checked_at": item["checked_at"], "db2_windows_message": item["message"], "db2_windows_file_path": item["file_path"]})
         conn.execute("UPDATE client_status SET " + ", ".join(f"{k}=?" for k in fields) + " WHERE client=?", list(fields.values()) + [item["client"]])
-        row = conn.execute("SELECT cs.*, cc.db2_type FROM client_status cs LEFT JOIN clients_config cc ON cc.client=cs.client WHERE cs.client=?", (item["client"],)).fetchone()
+        row = conn.execute("SELECT cs.*, cc.db2_type, cc.freshness_limit_hours FROM client_status cs LEFT JOIN clients_config cc ON cc.client=cs.client WHERE cs.client=?", (item["client"],)).fetchone()
         new_overall = overall(row); tmp = dict(row); tmp["overall_status"] = new_overall
         if new_overall == "OK": conn.execute("UPDATE client_status SET overall_status=?, last_message=?, last_error=NULL, updated_at=? WHERE client=?", (new_overall, display_message(tmp), now(), item["client"]))
         else: conn.execute("UPDATE client_status SET overall_status=?, last_message=?, updated_at=? WHERE client=?", (new_overall, display_message(tmp), now(), item["client"]))
@@ -423,7 +459,7 @@ def save_zus_cert_item(item):
 
 def refresh_display_messages():
     with db() as conn:
-        for row in conn.execute("SELECT cs.*, cc.db2_type FROM client_status cs LEFT JOIN clients_config cc ON cc.client=cs.client").fetchall():
+        for row in conn.execute("SELECT cs.*, cc.db2_type, cc.freshness_limit_hours FROM client_status cs LEFT JOIN clients_config cc ON cc.client=cs.client").fetchall():
             new_overall = overall(row); tmp = dict(row); tmp["overall_status"] = new_overall
             conn.execute("UPDATE client_status SET overall_status=?, last_message=?, last_error=CASE WHEN ?='OK' THEN NULL ELSE last_error END WHERE client=?", (new_overall, display_message(tmp), new_overall, row["client"]))
 
