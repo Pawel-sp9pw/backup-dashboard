@@ -808,7 +808,7 @@ def client_config_edit(client):
             conn.execute("INSERT INTO clients_config (client, display_name, active, backup_enabled, db2_type, cert_p1_enabled, notification_email, notes, retention_count, retention_days, freshness_limit_hours, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(client) DO UPDATE SET display_name=excluded.display_name,active=excluded.active,backup_enabled=excluded.backup_enabled,db2_type=excluded.db2_type,cert_p1_enabled=excluded.cert_p1_enabled,notification_email=excluded.notification_email,notes=excluded.notes,retention_count=excluded.retention_count,retention_days=excluded.retention_days,freshness_limit_hours=excluded.freshness_limit_hours,updated_at=excluded.updated_at", (new_client, display_name, active, backup_enabled, db2_type, cert_p1_enabled, email, notes, retention_count, retention_days, freshness_limit_hours, now()))
             return redirect(url_for("clients_config"))
         if client == "__new__":
-            cfg = {"client": "", "display_name": "", "active": 1, "backup_enabled": 1, "db2_type": "none", "cert_p1_enabled": 0, "notification_email": "", "notes": "", "retention_count": None, "retention_days": None, "freshness_limit_hours": None
+            cfg = {"client": "", "display_name": "", "active": 1, "backup_enabled": 1, "db2_type": "none", "cert_p1_enabled": 0, "notification_email": "", "notes": "", "retention_count": None, "retention_days": None, "freshness_limit_hours": None}
         else:
             row = conn.execute("SELECT * FROM clients_config WHERE client=?", (client,)).fetchone()
             if not row:
