@@ -342,7 +342,7 @@ def display_message(row):
     if freshness_error and row["overall_status"] == "ERROR":
         return freshness_error
     if row["overall_status"] == "ERROR":
-        if row["freshness_status"] in ("BRAK", "OLD", "ERROR", "NO_DB2_BACKUP", "SKIPPED_NO_BACKUP") and row["freshness_message"]:
+        if effective_status in ("BRAK", "OLD", "ERROR", "NO_DB2_BACKUP", "SKIPPED_NO_BACKUP") and row["freshness_message"] and not (row["freshness_status"] == "OLD" and effective_status != "OLD"):
             return clean_message(row["freshness_message"])
         if rank(row["db2_linux_status"]) == 3 and row["db2_linux_message"]: return clean_message(row["db2_linux_message"])
         if rank(row["db2_windows_status"]) == 3 and row["db2_windows_message"]: return clean_message(row["db2_windows_message"])
@@ -398,11 +398,12 @@ def maybe_notify(conn, client):
     if status == "STALE" and not cfg["notify_stale"]: return
     if status not in {"ERROR", "WARNING", "STALE"}: return
     tmp = dict(row); tmp["overall_status"] = status
+    effective_status, _ = effective_freshness(row)
     msg = display_message(tmp) or status
-    problem_key = "|".join([client, status, str(row["freshness_status"]), str(row["db2_linux_status"]), str(row["db2_windows_status"]), str(row["last_file_path"]), datetime.now(timezone.utc).date().isoformat()])
+    problem_key = "|".join([client, status, str(effective_status), str(row["db2_linux_status"]), str(row["db2_windows_status"]), str(row["last_file_path"]), datetime.now(timezone.utc).date().isoformat()])
     if cfg["last_notified_key"] == problem_key: return
     subject = f"PC MED backup: {client} - {status}"
-    body = f"Wykryto problem z kopią zapasową klienta: {client}\n\nStatus: {status}\nŚwieżość: {row['freshness_status'] or '-'}\nDB2: {combined_db2_status(row)}\nOstatnia kopia: {row['last_backup_time'] or '-'}\nPlik: {row['last_file_path'] or '-'}\nKomunikat: {msg}\n"
+    body = f"Wykryto problem z kopią zapasową klienta: {client}\n\nStatus: {status}\nŚwieżość: {effective_status or '-'}\nDB2: {combined_db2_status(row)}\nOstatnia kopia: {row['last_backup_time'] or '-'}\nPlik: {row['last_file_path'] or '-'}\nKomunikat: {msg}\n"
     send_status, error = "sent", None
     try: send_mail(cfg["email"], subject, body)
     except Exception as exc: send_status, error = "error", str(exc)
